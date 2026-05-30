@@ -6,8 +6,10 @@
 #              actions for AP restart / locate.
 # Author:      CliveS & Claude Opus 4.8
 # Date:        30-05-2026
-# Version:     0.1.0
+# Version:     0.1.1
 #
+# v0.1.1: AP device name auto-syncs to the UniFi name (handles swaps/renames);
+#         online APs now show the green (on) state image regardless of audit flags.
 # Engine patterns adapted from FlyingDiver's MIT Indigo-miniUniFi; PoE/locate
 # command idea + broad controller support informed by kw123's MIT unifi plugin.
 
@@ -44,7 +46,7 @@ try:
 except ImportError:
     PUSHOVER_USER_TOKEN = ""
 
-PLUGIN_VERSION = "0.1.0"
+PLUGIN_VERSION = "0.1.1"
 FOLDER_NAME = "UniFi Health"
 
 # UniFi radio identifiers -> friendly band labels.
@@ -379,8 +381,20 @@ class Plugin(indigo.PluginBase):
         states.append({"key": "apSummary", "value": summary})
 
         device.updateStatesOnServer(states)
-        device.updateStateImageOnServer(
-            indigo.kStateImageSel.SensorOn if not flags else indigo.kStateImageSel.SensorTripped)
+        # Green (on) when the AP is up — the audit is shown via configOK / auditFlags /
+        # the summary, not the status dot. (Offline path above uses the red tripped image.)
+        device.updateStateImageOnServer(indigo.kStateImageSel.SensorOn)
+
+        # Keep the Indigo device name in step with the UniFi name, so an AP swap or
+        # rename in UniFi flows through automatically (no stale names to untangle).
+        desired = f"UniFi AP {data.get('name', device.address)}"
+        if device.name != desired:
+            try:
+                device.name = desired
+                device.replaceOnServer()
+                self.logger.info(f"Renamed to match UniFi: {desired}")
+            except Exception as err:
+                self.logger.debug(f"name sync deferred -> {desired}: {err}")
 
     # ── Client device update ───────────────────────────────────────────────
 
