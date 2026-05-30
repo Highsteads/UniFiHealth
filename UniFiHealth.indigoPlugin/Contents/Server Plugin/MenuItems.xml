@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<MenuItems>
+
+    <MenuItem id="discoverAPs">
+        <Name>Discover / Create AP Devices</Name>
+        <CallbackMethod>menu_discover_aps</CallbackMethod>
+    </MenuItem>
+
+    <MenuItem id="runAudit">
+        <Name>Run WiFi Config Audit (log report)</Name>
+        <CallbackMethod>menu_run_audit</CallbackMethod>
+    </MenuItem>
+
+    <MenuItem id="sep_diag" isSeparator="true"/>
+
+    <MenuItem id="testConnection">
+        <Name>Test Connection</Name>
+        <CallbackMethod>testConnection</CallbackMethod>
+    </MenuItem>
+
+    <MenuItem id="sep_info" isSeparator="true"/>
+
+    <MenuItem id="showPluginInfo">
+        <Name>Show Plugin Info</Name>
+        <CallbackMethod>showPluginInfo</CallbackMethod>
+    </MenuItem>
+
+</MenuItems>

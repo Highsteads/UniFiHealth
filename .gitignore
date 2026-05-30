@@ -1,0 +1,11 @@
+IndigoSecrets.py
+**/IndigoSecrets.py
+secrets.py
+**/secrets.py
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+Contents/Packages/
+CLAUDE.md
+*.zip

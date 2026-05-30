@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<Actions>
+
+    <!-- AP commands via cmd/devmgr (a command endpoint — may work even where
+         config-REST writes do not). Target a UniFi Access Point device. -->
+
+    <Action id="restartAP" deviceFilter="self.unifiAP" uiPath="DeviceActions">
+        <Name>Restart Access Point</Name>
+        <CallbackMethod>action_restart_ap</CallbackMethod>
+    </Action>
+
+    <Action id="locateAP" deviceFilter="self.unifiAP" uiPath="DeviceActions">
+        <Name>Locate Access Point (flash LED)</Name>
+        <CallbackMethod>action_locate_ap</CallbackMethod>
+    </Action>
+
+    <Action id="unlocateAP" deviceFilter="self.unifiAP" uiPath="DeviceActions">
+        <Name>Stop Locating Access Point</Name>
+        <CallbackMethod>action_unlocate_ap</CallbackMethod>
+    </Action>
+
+    <Action id="refreshData" uiPath="DeviceActions">
+        <Name>Refresh UniFi Data Now</Name>
+        <CallbackMethod>action_refresh_now</CallbackMethod>
+    </Action>
+
+</Actions>

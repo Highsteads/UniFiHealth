@@ -1,0 +1,144 @@
+<?xml version="1.0"?>
+<Devices>
+
+    <!-- ============================================================= -->
+    <!-- UniFi Controller — one per controller. Creds resolve from      -->
+    <!-- IndigoSecrets.py (UNIFI_*) first, then these fields, then       -->
+    <!-- PluginConfig. Leave blank to use IndigoSecrets.py.              -->
+    <!-- ============================================================= -->
+    <Device id="unifiController" type="custom">
+        <Name>UniFi Controller</Name>
+        <ConfigUI>
+            <Field id="credsLabel" type="label" fontSize="small" fontColor="darkgray">
+                <Label>UniFi credentials are read from IndigoSecrets.py first (UNIFI_HOST / UNIFI_USERNAME / UNIFI_PASSWORD). Enter below only the values IndigoSecrets does not provide. Saving is blocked until host, username and password are all available.</Label>
+            </Field>
+            <Field id="address" type="textfield" defaultValue="">
+                <Label>Controller IP / Hostname:</Label>
+            </Field>
+            <Field id="port" type="textfield" defaultValue="443" tooltip="443 for UniFi OS (UDM/UDR); 8443 for a legacy software controller.">
+                <Label>Port:</Label>
+            </Field>
+            <Field id="username" type="textfield" defaultValue="">
+                <Label>Username:</Label>
+            </Field>
+            <Field id="password" type="textfield" defaultValue="" secure="true">
+                <Label>Password:</Label>
+            </Field>
+            <Field id="ssl_verify" type="checkbox" defaultValue="false">
+                <Label>Verify SSL:</Label>
+                <Description>Verify the controller's TLS certificate (off for self-signed)</Description>
+            </Field>
+            <Field id="sep_escape" type="separator"/>
+            <Field id="configure_later" type="checkbox" defaultValue="false">
+                <Label>Save without configuring:</Label>
+                <Description>Tick to save and exit now (the controller stays idle until credentials are added). Or click Cancel to discard without saving.</Description>
+            </Field>
+        </ConfigUI>
+        <States>
+            <State id="status">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Controller Status</TriggerLabel>
+                <ControlPageLabel>Controller Status</ControlPageLabel>
+            </State>
+            <State id="unifiOS"><ValueType>Boolean</ValueType><TriggerLabel>Is UniFi OS</TriggerLabel><ControlPageLabel>Is UniFi OS</ControlPageLabel></State>
+            <State id="controllerVersion"><ValueType>String</ValueType><TriggerLabel>Controller Version</TriggerLabel><ControlPageLabel>Controller Version</ControlPageLabel></State>
+            <State id="wlanHealth"><ValueType>String</ValueType><TriggerLabel>WLAN Health</TriggerLabel><ControlPageLabel>WLAN Health</ControlPageLabel></State>
+            <State id="numAPs"><ValueType>Integer</ValueType><TriggerLabel>Number of APs</TriggerLabel><ControlPageLabel>Number of APs</ControlPageLabel></State>
+            <State id="numClients"><ValueType>Integer</ValueType><TriggerLabel>Number of Clients</TriggerLabel><ControlPageLabel>Number of Clients</ControlPageLabel></State>
+            <State id="worstApUtilisation"><ValueType>Integer</ValueType><TriggerLabel>Worst AP Utilisation %</TriggerLabel><ControlPageLabel>Worst AP Utilisation %</ControlPageLabel></State>
+            <State id="worstClientSatisfaction"><ValueType>Integer</ValueType><TriggerLabel>Worst Client Satisfaction</TriggerLabel><ControlPageLabel>Worst Client Satisfaction</ControlPageLabel></State>
+            <State id="auditIssues"><ValueType>Integer</ValueType><TriggerLabel>Config Audit Issue Count</TriggerLabel><ControlPageLabel>Config Audit Issue Count</ControlPageLabel></State>
+        </States>
+        <UiDisplayStateId>status</UiDisplayStateId>
+    </Device>
+
+    <!-- ============================================================= -->
+    <!-- UniFi Access Point — auto-discovered. Curated health + audit.  -->
+    <!-- ============================================================= -->
+    <Device id="unifiAP" type="sensor">
+        <Name>UniFi Access Point</Name>
+        <ConfigUI>
+            <Field id="SupportsOnState" type="checkbox" defaultValue="true" hidden="true"/>
+            <Field id="SupportsSensorValue" type="checkbox" defaultValue="false" hidden="true"/>
+            <Field id="SupportsStatusRequest" type="checkbox" defaultValue="false" hidden="true"/>
+            <Field id="unifi_controller" type="menu">
+                <Label>UniFi Controller:</Label>
+                <List class="self" method="get_controller_list" dynamicReload="true"/>
+                <CallbackMethod>menuChanged</CallbackMethod>
+            </Field>
+            <Field id="address" type="menu" tooltip="The AP (by MAC).">
+                <Label>Access Point:</Label>
+                <List class="self" method="get_ap_list" dynamicReload="true"/>
+            </Field>
+        </ConfigUI>
+        <States>
+            <State id="apSummary"><ValueType>String</ValueType><TriggerLabel>Summary</TriggerLabel><ControlPageLabel>Summary</ControlPageLabel></State>
+            <State id="apModel"><ValueType>String</ValueType><TriggerLabel>Model</TriggerLabel><ControlPageLabel>Model</ControlPageLabel></State>
+            <State id="uptimeSeconds"><ValueType>Integer</ValueType><TriggerLabel>Uptime (s)</TriggerLabel><ControlPageLabel>Uptime (s)</ControlPageLabel></State>
+            <State id="rebooted"><ValueType>Boolean</ValueType><TriggerLabel>Recently Rebooted</TriggerLabel><ControlPageLabel>Recently Rebooted</ControlPageLabel></State>
+            <State id="uplinkType"><ValueType>String</ValueType><TriggerLabel>Uplink Type (wire/wireless)</TriggerLabel><ControlPageLabel>Uplink Type</ControlPageLabel></State>
+            <State id="numClients"><ValueType>Integer</ValueType><TriggerLabel>Total Clients</TriggerLabel><ControlPageLabel>Total Clients</ControlPageLabel></State>
+            <State id="configOK"><ValueType>Boolean</ValueType><TriggerLabel>Config OK (audit)</TriggerLabel><ControlPageLabel>Config OK</ControlPageLabel></State>
+            <State id="auditFlags"><ValueType>String</ValueType><TriggerLabel>Audit Flags</TriggerLabel><ControlPageLabel>Audit Flags</ControlPageLabel></State>
+
+            <!-- 2.4 GHz -->
+            <State id="band24Channel"><ValueType>String</ValueType><TriggerLabel>2.4GHz Channel</TriggerLabel><ControlPageLabel>2.4GHz Channel</ControlPageLabel></State>
+            <State id="band24Width"><ValueType>Integer</ValueType><TriggerLabel>2.4GHz Width (MHz)</TriggerLabel><ControlPageLabel>2.4GHz Width</ControlPageLabel></State>
+            <State id="band24TxPower"><ValueType>String</ValueType><TriggerLabel>2.4GHz TX Power</TriggerLabel><ControlPageLabel>2.4GHz TX Power</ControlPageLabel></State>
+            <State id="band24Utilisation"><ValueType>Integer</ValueType><TriggerLabel>2.4GHz Utilisation %</TriggerLabel><ControlPageLabel>2.4GHz Utilisation %</ControlPageLabel></State>
+            <State id="band24Satisfaction"><ValueType>Integer</ValueType><TriggerLabel>2.4GHz Satisfaction</TriggerLabel><ControlPageLabel>2.4GHz Satisfaction</ControlPageLabel></State>
+            <State id="band24Clients"><ValueType>Integer</ValueType><TriggerLabel>2.4GHz Clients</TriggerLabel><ControlPageLabel>2.4GHz Clients</ControlPageLabel></State>
+            <State id="band24MinRssiOn"><ValueType>Boolean</ValueType><TriggerLabel>2.4GHz Min-RSSI Enabled</TriggerLabel><ControlPageLabel>2.4GHz Min-RSSI Enabled</ControlPageLabel></State>
+
+            <!-- 5 GHz -->
+            <State id="band5Channel"><ValueType>String</ValueType><TriggerLabel>5GHz Channel</TriggerLabel><ControlPageLabel>5GHz Channel</ControlPageLabel></State>
+            <State id="band5Width"><ValueType>Integer</ValueType><TriggerLabel>5GHz Width (MHz)</TriggerLabel><ControlPageLabel>5GHz Width</ControlPageLabel></State>
+            <State id="band5TxPower"><ValueType>String</ValueType><TriggerLabel>5GHz TX Power</TriggerLabel><ControlPageLabel>5GHz TX Power</ControlPageLabel></State>
+            <State id="band5Utilisation"><ValueType>Integer</ValueType><TriggerLabel>5GHz Utilisation %</TriggerLabel><ControlPageLabel>5GHz Utilisation %</ControlPageLabel></State>
+            <State id="band5Satisfaction"><ValueType>Integer</ValueType><TriggerLabel>5GHz Satisfaction</TriggerLabel><ControlPageLabel>5GHz Satisfaction</ControlPageLabel></State>
+            <State id="band5Clients"><ValueType>Integer</ValueType><TriggerLabel>5GHz Clients</TriggerLabel><ControlPageLabel>5GHz Clients</ControlPageLabel></State>
+
+            <!-- 6 GHz -->
+            <State id="band6Channel"><ValueType>String</ValueType><TriggerLabel>6GHz Channel</TriggerLabel><ControlPageLabel>6GHz Channel</ControlPageLabel></State>
+            <State id="band6Width"><ValueType>Integer</ValueType><TriggerLabel>6GHz Width (MHz)</TriggerLabel><ControlPageLabel>6GHz Width</ControlPageLabel></State>
+            <State id="band6Utilisation"><ValueType>Integer</ValueType><TriggerLabel>6GHz Utilisation %</TriggerLabel><ControlPageLabel>6GHz Utilisation %</ControlPageLabel></State>
+            <State id="band6Clients"><ValueType>Integer</ValueType><TriggerLabel>6GHz Clients</TriggerLabel><ControlPageLabel>6GHz Clients</ControlPageLabel></State>
+        </States>
+        <UiDisplayStateId>apSummary</UiDisplayStateId>
+    </Device>
+
+    <!-- ============================================================= -->
+    <!-- UniFi Client — opt-in, for the devices you care about          -->
+    <!-- (e.g. the Shelly plugs). Presence + signal/satisfaction.       -->
+    <!-- ============================================================= -->
+    <Device id="unifiClient" type="sensor">
+        <Name>UniFi WiFi Client</Name>
+        <ConfigUI>
+            <Field id="SupportsOnState" type="checkbox" defaultValue="true" hidden="true"/>
+            <Field id="SupportsSensorValue" type="checkbox" defaultValue="false" hidden="true"/>
+            <Field id="SupportsStatusRequest" type="checkbox" defaultValue="false" hidden="true"/>
+            <Field id="unifi_controller" type="menu">
+                <Label>UniFi Controller:</Label>
+                <List class="self" method="get_controller_list" dynamicReload="true"/>
+                <CallbackMethod>menuChanged</CallbackMethod>
+            </Field>
+            <Field id="address" type="menu" tooltip="The client (by MAC).">
+                <Label>Client:</Label>
+                <List class="self" method="get_client_list" dynamicReload="true"/>
+            </Field>
+        </ConfigUI>
+        <States>
+            <State id="clientSummary"><ValueType>String</ValueType><TriggerLabel>Summary</TriggerLabel><ControlPageLabel>Summary</ControlPageLabel></State>
+            <State id="signal"><ValueType>Integer</ValueType><TriggerLabel>Signal (dBm)</TriggerLabel><ControlPageLabel>Signal (dBm)</ControlPageLabel></State>
+            <State id="satisfaction"><ValueType>Integer</ValueType><TriggerLabel>Satisfaction</TriggerLabel><ControlPageLabel>Satisfaction</ControlPageLabel></State>
+            <State id="apName"><ValueType>String</ValueType><TriggerLabel>Connected AP</TriggerLabel><ControlPageLabel>Connected AP</ControlPageLabel></State>
+            <State id="essid"><ValueType>String</ValueType><TriggerLabel>SSID</TriggerLabel><ControlPageLabel>SSID</ControlPageLabel></State>
+            <State id="channel"><ValueType>String</ValueType><TriggerLabel>Channel</TriggerLabel><ControlPageLabel>Channel</ControlPageLabel></State>
+            <State id="wired"><ValueType>Boolean</ValueType><TriggerLabel>Wired</TriggerLabel><ControlPageLabel>Wired</ControlPageLabel></State>
+            <State id="vendor"><ValueType>String</ValueType><TriggerLabel>Vendor (MAC OUI)</TriggerLabel><ControlPageLabel>Vendor</ControlPageLabel></State>
+            <State id="offlineSeconds"><ValueType>Integer</ValueType><TriggerLabel>Seconds Offline</TriggerLabel><ControlPageLabel>Seconds Offline</ControlPageLabel></State>
+        </States>
+        <UiDisplayStateId>clientSummary</UiDisplayStateId>
+    </Device>
+
+</Devices>

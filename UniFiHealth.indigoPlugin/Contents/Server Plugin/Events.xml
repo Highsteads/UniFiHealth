@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<Events>
+
+    <!-- Numeric thresholds (utilisation high, satisfaction low) are best done
+         with Indigo's built-in device-state triggers on the numeric states
+         (e.g. unifiAP band24Utilisation greater than 70). These custom events
+         cover the computed / cross-cutting conditions that aren't a single
+         numeric state. -->
+
+    <Event id="apRebooted">
+        <Name>An Access Point Rebooted</Name>
+    </Event>
+
+    <Event id="configIssueFound">
+        <Name>Config Audit Found an Issue (wrong setting / over-powered AP)</Name>
+    </Event>
+
+    <Event id="apHighUtilisation">
+        <Name>An AP Band Went Over the Utilisation Threshold</Name>
+    </Event>
+
+    <Event id="clientLowSatisfaction">
+        <Name>A Client Dropped Below the Satisfaction Threshold</Name>
+    </Event>
+
+    <Event id="controllerUnreachable">
+        <Name>The UniFi Controller Became Unreachable</Name>
+    </Event>
+
+    <Event id="wlanDegraded">
+        <Name>WLAN Subsystem Health Not OK</Name>
+    </Event>
+
+</Events>

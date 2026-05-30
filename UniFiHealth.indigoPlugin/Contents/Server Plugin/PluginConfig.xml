@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<PluginConfig>
+
+    <Field id="intro" type="label" fontSize="small" fontColor="darkgray">
+        <Label>UniFi credentials live in IndigoSecrets.py (UNIFI_HOST / UNIFI_USERNAME / UNIFI_PASSWORD) or on the UniFi Controller device. This dialog sets polling, audit thresholds and auto-create behaviour.</Label>
+    </Field>
+
+    <Field id="updateFrequency" type="textfield" defaultValue="60" tooltip="Seconds between controller polls (minimum 30).">
+        <Label>Update frequency (seconds):</Label>
+    </Field>
+    <Field id="utilWarnPct" type="textfield" defaultValue="70" tooltip="Flag a band whose channel utilisation exceeds this.">
+        <Label>Utilisation warning threshold (%):</Label>
+    </Field>
+    <Field id="satisfactionWarn" type="textfield" defaultValue="80" tooltip="Flag a client whose satisfaction falls below this.">
+        <Label>Satisfaction warning threshold:</Label>
+    </Field>
+
+    <Field id="sep1" type="separator"/>
+
+    <Field id="autoCreateAPs" type="checkbox" defaultValue="true">
+        <Label>Auto-create AP devices:</Label>
+        <Description>Create an Indigo device for every access point found</Description>
+    </Field>
+    <Field id="pushoverAlerts" type="checkbox" defaultValue="false">
+        <Label>Pushover WiFi alerts:</Label>
+        <Description>Page once with the cause (AP rebooted / controller unreachable) instead of the symptom flapping</Description>
+    </Field>
+
+    <Field id="sep2" type="separator"/>
+
+    <Field id="logLevel" type="menu" defaultValue="20">
+        <Label>Log level:</Label>
+        <List>
+            <Option value="10">Debug</Option>
+            <Option value="20">Info</Option>
+            <Option value="30">Warning</Option>
+            <Option value="40">Error</Option>
+        </List>
+    </Field>
+
+</PluginConfig>
