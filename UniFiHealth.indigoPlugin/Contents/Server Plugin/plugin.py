@@ -5,15 +5,18 @@
 #              for UniFi controllers (UDM/UDR + legacy). Read-mostly; cmd/devmgr
 #              actions for AP restart / locate.
 # Author:      CliveS & Claude Opus 4.8
-# Date:        30-05-2026
-# Version:     0.1.1
+# Date:        31-05-2026
+# Version:     0.2.0
 #
+# v0.2.0: each AP now publishes its connected wireless clients as a clientsJson
+#         state (name/band/signal/satisfaction) for the Dashboards WiFi AP page.
 # v0.1.1: AP device name auto-syncs to the UniFi name (handles swaps/renames);
 #         online APs now show the green (on) state image regardless of audit flags.
 # Engine patterns adapted from FlyingDiver's MIT Indigo-miniUniFi; PoE/locate
 # command idea + broad controller support informed by kw123's MIT unifi plugin.
 
 import indigo
+import json
 import os as _os
 import sys as _sys
 from datetime import datetime
@@ -46,11 +49,13 @@ try:
 except ImportError:
     PUSHOVER_USER_TOKEN = ""
 
-PLUGIN_VERSION = "0.1.1"
+PLUGIN_VERSION = "0.2.0"
 FOLDER_NAME = "UniFi Health"
 
 # UniFi radio identifiers -> friendly band labels.
 RADIO_BAND = {"ng": "24", "na": "5", "6e": "6"}
+# Client records report the radio they're on as ng/na/6e — map to a UI band label.
+CLIENT_BAND_UI = {"ng": "2.4", "na": "5", "6e": "6"}
 
 
 def secs_to_ui(seconds):
@@ -151,6 +156,12 @@ class Plugin(indigo.PluginBase):
             self.next_update = 0.0
         elif device.deviceTypeId == "unifiAP":
             self.ap_devices[device.id] = int(device.pluginProps.get("unifi_controller", 0))
+            # Register any states added since this device was created (e.g.
+            # clientsJson in 0.2.0) so the next poll can write them.
+            try:
+                device.stateListOrDisplayStateIdChanged()
+            except Exception as err:
+                self.logger.debug(f"stateListOrDisplayStateIdChanged({device.name}): {err}")
             self.next_update = 0.0
         elif device.deviceTypeId == "unifiClient":
             self.client_devices[device.id] = int(device.pluginProps.get("unifi_controller", 0))
@@ -379,6 +390,26 @@ class Plugin(indigo.PluginBase):
         if flags:
             summary += f"  ⚠ {len(flags)}"
         states.append({"key": "apSummary", "value": summary})
+
+        # connected wireless clients on this AP (ap_mac maps to this AP's MAC).
+        # Published as compact JSON for the Dashboards WiFi AP detail page.
+        ap_clients = []
+        for mac, c in cache["clients_by_mac"].items():
+            if c.get("ap_mac") != device.address:
+                continue
+            ap_clients.append({
+                "n":   c.get("name") or c.get("hostname") or c.get("oui") or mac,
+                "b":   CLIENT_BAND_UI.get(c.get("radio"), ""),
+                "sig": c.get("signal"),
+                "sat": c.get("satisfaction"),
+            })
+        # strongest/happiest first: satisfaction, then signal
+        ap_clients.sort(
+            key=lambda x: (x["sat"] if x["sat"] is not None else -1,
+                           x["sig"] if x["sig"] is not None else -999),
+            reverse=True,
+        )
+        states.append({"key": "clientsJson", "value": json.dumps(ap_clients, separators=(",", ":"))})
 
         device.updateStatesOnServer(states)
         # Green (on) when the AP is up — the audit is shown via configOK / auditFlags /

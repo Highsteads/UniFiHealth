@@ -103,6 +103,11 @@
             <State id="band6Width"><ValueType>Integer</ValueType><TriggerLabel>6GHz Width (MHz)</TriggerLabel><ControlPageLabel>6GHz Width</ControlPageLabel></State>
             <State id="band6Utilisation"><ValueType>Integer</ValueType><TriggerLabel>6GHz Utilisation %</TriggerLabel><ControlPageLabel>6GHz Utilisation %</ControlPageLabel></State>
             <State id="band6Clients"><ValueType>Integer</ValueType><TriggerLabel>6GHz Clients</TriggerLabel><ControlPageLabel>6GHz Clients</ControlPageLabel></State>
+
+            <!-- Connected wireless clients on this AP, as a JSON array of
+                 {n:name, b:band, sig:signal dBm, sat:satisfaction}. Consumed by
+                 the Dashboards WiFi AP detail page. -->
+            <State id="clientsJson"><ValueType>String</ValueType><TriggerLabel>Connected Clients (JSON)</TriggerLabel><ControlPageLabel>Connected Clients (JSON)</ControlPageLabel></State>
         </States>
         <UiDisplayStateId>apSummary</UiDisplayStateId>
     </Device>
