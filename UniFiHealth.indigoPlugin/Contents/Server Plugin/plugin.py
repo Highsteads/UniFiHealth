@@ -6,7 +6,7 @@
 #              actions for AP restart / locate.
 # Author:      CliveS & Claude Opus 4.8
 # Date:        31-05-2026
-# Version:     0.2.0
+# Version:     0.2.1
 #
 # v0.2.0: each AP now publishes its connected wireless clients as a clientsJson
 #         state (name/band/signal/satisfaction) for the Dashboards WiFi AP page.
@@ -49,8 +49,24 @@ try:
 except ImportError:
     PUSHOVER_USER_TOKEN = ""
 
-PLUGIN_VERSION = "0.2.0"
+PLUGIN_VERSION = "0.2.1"
 FOLDER_NAME = "UniFi Health"
+
+
+def _as_int(value, default):
+    """Coerce to int, returning default on blank/non-numeric config input."""
+    try:
+        return int(str(value).strip())
+    except (ValueError, TypeError):
+        return default
+
+
+def _as_float(value, default):
+    """Coerce to float, returning default on blank/non-numeric config input."""
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return default
 
 # UniFi radio identifiers -> friendly band labels.
 RADIO_BAND = {"ng": "24", "na": "5", "6e": "6"}
@@ -74,9 +90,9 @@ class Plugin(indigo.PluginBase):
         if install_timestamp_filter:
             install_timestamp_filter(self, enabled=True)
 
-        self.update_frequency = max(30.0, float(pluginPrefs.get("updateFrequency", 60)))
-        self.util_warn = int(pluginPrefs.get("utilWarnPct", 70))
-        self.sat_warn = int(pluginPrefs.get("satisfactionWarn", 80))
+        self.update_frequency = max(30.0, _as_float(pluginPrefs.get("updateFrequency"), 60.0))
+        self.util_warn = _as_int(pluginPrefs.get("utilWarnPct"), 70)
+        self.sat_warn = _as_int(pluginPrefs.get("satisfactionWarn"), 80)
         self.pushover_alerts = bool(pluginPrefs.get("pushoverAlerts", False))
 
         self.controllers = {}      # controllerDevId -> cache dict
@@ -155,7 +171,7 @@ class Plugin(indigo.PluginBase):
                                            "clients_by_mac": {}, "ch24": {}, "ap_uptime": {}}
             self.next_update = 0.0
         elif device.deviceTypeId == "unifiAP":
-            self.ap_devices[device.id] = int(device.pluginProps.get("unifi_controller", 0))
+            self.ap_devices[device.id] = _as_int(device.pluginProps.get("unifi_controller"), 0)
             # Register any states added since this device was created (e.g.
             # clientsJson in 0.2.0) so the next poll can write them.
             try:
@@ -164,7 +180,7 @@ class Plugin(indigo.PluginBase):
                 self.logger.debug(f"stateListOrDisplayStateIdChanged({device.name}): {err}")
             self.next_update = 0.0
         elif device.deviceTypeId == "unifiClient":
-            self.client_devices[device.id] = int(device.pluginProps.get("unifi_controller", 0))
+            self.client_devices[device.id] = _as_int(device.pluginProps.get("unifi_controller"), 0)
             self.next_update = 0.0
 
     def deviceStopComm(self, device):
@@ -559,6 +575,14 @@ class Plugin(indigo.PluginBase):
 
     def action_unlocate_ap(self, action, device):
         self._ap_command(device, "unset-locate")
+
+    def actionControlSensor(self, action, dev):
+        # unifiAP + unifiClient are type="sensor"; without this a Send Status Request logs
+        # "plugin does not define method actionControlSensor". RequestStatus forces a refresh.
+        if action.sensorAction == indigo.kSensorAction.RequestStatus:
+            self.next_update = 0.0
+        else:
+            self.logger.warning(f"{dev.name}: unsupported sensor action {action.sensorAction}")
 
     def action_refresh_now(self, action=None, device=None):
         self.next_update = 0.0
