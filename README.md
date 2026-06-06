@@ -51,7 +51,10 @@ UNIFI_USERNAME = "your-local-unifi-user"
 UNIFI_PASSWORD = "your-password"
 ```
 
-If you don't use `IndigoSecrets.py`, fill the same values into the plugin's
+To create `IndigoSecrets.py`, copy `IndigoSecrets_example.py` (shipped with the CliveS
+plugins) into `/Library/Application Support/Perceptive Automation/` and rename the copy to
+`IndigoSecrets.py`, then fill in your values. If you would rather not use `IndigoSecrets.py`
+at all, fill the same values into the plugin's
 Configure dialog (or the Controller device). A **local-only UniFi account without
 2FA** is recommended — a Viewer-role account is enough for everything except the
 optional AP commands.
