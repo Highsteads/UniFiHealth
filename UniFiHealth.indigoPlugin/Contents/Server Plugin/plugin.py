@@ -5,8 +5,8 @@
 #              for UniFi controllers (UDM/UDR + legacy). Read-mostly; cmd/devmgr
 #              actions for AP restart / locate.
 # Author:      CliveS & Claude Opus 4.8
-# Date:        31-05-2026
-# Version:     0.2.1
+# Date:        10-06-2026
+# Version:     0.2.2
 #
 # v0.2.0: each AP now publishes its connected wireless clients as a clientsJson
 #         state (name/band/signal/satisfaction) for the Dashboards WiFi AP page.
@@ -19,7 +19,6 @@ import indigo
 import json
 import os as _os
 import sys as _sys
-from datetime import datetime
 
 _sys.path.insert(0, _os.getcwd())
 try:
@@ -49,7 +48,7 @@ try:
 except ImportError:
     PUSHOVER_USER_TOKEN = ""
 
-PLUGIN_VERSION = "0.2.1"
+PLUGIN_VERSION = "0.2.2"
 FOLDER_NAME = "UniFi Health"
 
 

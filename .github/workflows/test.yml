@@ -1,0 +1,21 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"   # matches Indigo 2025.2's embedded Python
+      - name: Syntax check
+        run: python -m compileall -q "UniFiHealth.indigoPlugin/Contents/Server Plugin"
+      - name: Lint (ruff — errors only, see ruff.toml)
+        run: |
+          pip install ruff
+          ruff check .

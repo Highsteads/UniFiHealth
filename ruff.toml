@@ -1,0 +1,7 @@
+# Lint gate — errors only (Pyflakes F rules: undefined names, unused
+# imports/variables, duplicate arguments). Deliberately NOT a style pass.
+target-version = "py313"
+extend-exclude = ["UniFiHealth.indigoPlugin/Contents/Packages"]
+
+[lint]
+select = ["F"]

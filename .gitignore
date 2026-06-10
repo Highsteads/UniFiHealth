@@ -9,3 +9,6 @@ __pycache__/
 Contents/Packages/
 CLAUDE.md
 *.zip
+
+# Test runner artefacts
+.pytest_cache/
