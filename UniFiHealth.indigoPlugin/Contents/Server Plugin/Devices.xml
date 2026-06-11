@@ -142,6 +142,12 @@
             <State id="wired"><ValueType>Boolean</ValueType><TriggerLabel>Wired</TriggerLabel><ControlPageLabel>Wired</ControlPageLabel></State>
             <State id="vendor"><ValueType>String</ValueType><TriggerLabel>Vendor (MAC OUI)</TriggerLabel><ControlPageLabel>Vendor</ControlPageLabel></State>
             <State id="offlineSeconds"><ValueType>Integer</ValueType><TriggerLabel>Seconds Offline</TriggerLabel><ControlPageLabel>Seconds Offline</ControlPageLabel></State>
+            <!-- Presence (v0.3.0): instant-home, slow-away. A phone briefly
+                 dropping off WiFi stays "home" until awayMinutes of silence. -->
+            <State id="presence"><ValueType>String</ValueType><TriggerLabel>Presence (home/away)</TriggerLabel><ControlPageLabel>Presence</ControlPageLabel></State>
+            <State id="minutesSinceSeen"><ValueType>Integer</ValueType><TriggerLabel>Minutes Since Seen</TriggerLabel><ControlPageLabel>Minutes Since Seen</ControlPageLabel></State>
+            <State id="lastSeenEpoch"><ValueType>Integer</ValueType><TriggerLabel>Last Seen (epoch)</TriggerLabel><ControlPageLabel>Last Seen (epoch)</ControlPageLabel></State>
+            <State id="presenceChangedUi"><ValueType>String</ValueType><TriggerLabel>Presence Changed At</TriggerLabel><ControlPageLabel>Presence Changed At</ControlPageLabel></State>
         </States>
         <UiDisplayStateId>clientSummary</UiDisplayStateId>
     </Device>

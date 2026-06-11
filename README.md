@@ -23,7 +23,7 @@ a channel, a band over its utilisation threshold.*
 | --- | --- |
 | **UniFi Controller** | Connection status, version, AP/client counts, WLAN health, worst-AP utilisation, worst-client satisfaction, total audit issues. |
 | **UniFi Access Point** | Per band (2.4/5/6 GHz): channel, width, TX power, utilisation, satisfaction, client count; uptime + reboot detection; uplink type; and an **audit** (`configOK` + `auditFlags`). Auto-discovered. |
-| **UniFi WiFi Client** | Opt-in, for the devices you care about (e.g. smart plugs): signal, satisfaction, connected AP, SSID, vendor, online/offline. |
+| **UniFi WiFi Client** | Opt-in, for the devices you care about (e.g. smart plugs): signal, satisfaction, connected AP, SSID, vendor, online/offline. As of **v0.3.0** every tracked client also gets **presence** — a debounced `home`/`away` state designed for phones. |
 
 ## Features
 
@@ -40,6 +40,17 @@ a channel, a band over its utilisation threshold.*
   degraded. Numeric thresholds (utilisation, satisfaction) use Indigo's built-in
   device-state triggers on the numeric states.
 - **AP actions** — restart an AP, locate it (flash the LED), via `cmd/devmgr`.
+- **Phone presence (v0.3.0)** — track a phone as a WiFi Client device and it gains a
+  `presence` state with proper debounce: connecting marks it `home` instantly, but it
+  only flips to `away` after a configurable quiet period (default 10 minutes), because
+  phones nap off WiFi constantly and raw connected/disconnected would flap all day.
+  Two new trigger events — *client arrived* and *client left* — fire on the debounced
+  transitions, `minutesSinceSeen` and a persisted last-seen survive plugin restarts,
+  and the away delay lives in the plugin config. One honest caveat: iPhones use a
+  private (randomised) WiFi address per network — fine for tracking as long as
+  "Rotate WiFi Address" stays off for your home network in iOS settings, but if iOS
+  rotates the address the device will look like it never came back. Track by the
+  address your controller actually shows for the phone.
 
 ## Credentials
 

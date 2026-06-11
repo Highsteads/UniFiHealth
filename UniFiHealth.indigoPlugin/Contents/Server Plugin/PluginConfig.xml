@@ -14,6 +14,12 @@
     <Field id="satisfactionWarn" type="textfield" defaultValue="80" tooltip="Flag a client whose satisfaction falls below this.">
         <Label>Satisfaction warning threshold:</Label>
     </Field>
+    <Field id="awayMinutes" type="textfield" defaultValue="10" tooltip="A tracked client is marked away after this many minutes off the network. Connecting again marks it home instantly.">
+        <Label>Presence: away after (minutes):</Label>
+    </Field>
+    <Field id="hlpAway" type="label" fontSize="mini" alignWithControl="true">
+        <Label>Phones drop off WiFi briefly all the time (sleep, walking between rooms) — the away delay stops presence flapping. Home is instant, away is patient.</Label>
+    </Field>
 
     <Field id="sep1" type="separator"/>
 

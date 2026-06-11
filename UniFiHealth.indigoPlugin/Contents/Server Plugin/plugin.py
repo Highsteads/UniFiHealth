@@ -6,7 +6,7 @@
 #              actions for AP restart / locate.
 # Author:      CliveS & Claude Opus 4.8
 # Date:        10-06-2026
-# Version:     0.2.2
+# Version:     0.3.0
 #
 # v0.2.0: each AP now publishes its connected wireless clients as a clientsJson
 #         state (name/band/signal/satisfaction) for the Dashboards WiFi AP page.
@@ -48,7 +48,7 @@ try:
 except ImportError:
     PUSHOVER_USER_TOKEN = ""
 
-PLUGIN_VERSION = "0.2.2"
+PLUGIN_VERSION = "0.3.0"
 FOLDER_NAME = "UniFi Health"
 
 
@@ -93,10 +93,14 @@ class Plugin(indigo.PluginBase):
         self.util_warn = _as_int(pluginPrefs.get("utilWarnPct"), 70)
         self.sat_warn = _as_int(pluginPrefs.get("satisfactionWarn"), 80)
         self.pushover_alerts = bool(pluginPrefs.get("pushoverAlerts", False))
+        # Presence (v0.3.0): minutes off the network before a tracked client
+        # flips to away. Home is instant; away waits this long.
+        self.away_minutes = max(2, _as_int(pluginPrefs.get("awayMinutes"), 10))
 
         self.controllers = {}      # controllerDevId -> cache dict
         self.ap_devices = {}       # apDevId -> controllerDevId
         self.client_devices = {}   # clientDevId -> controllerDevId
+        self.client_last_seen = {} # clientDevId -> epoch of last sighting
         self.event_triggers = {}   # triggerId -> trigger
         self._alert_times = {}     # alert-key -> last-sent epoch (Pushover debounce)
         self.next_update = 0.0
@@ -180,6 +184,19 @@ class Plugin(indigo.PluginBase):
             self.next_update = 0.0
         elif device.deviceTypeId == "unifiClient":
             self.client_devices[device.id] = _as_int(device.pluginProps.get("unifi_controller"), 0)
+            # Register the presence states added in 0.3.0 on devices created
+            # earlier, then seed last-seen from the persisted epoch so a
+            # restart doesn't flap presence.
+            try:
+                device.stateListOrDisplayStateIdChanged()
+                device = indigo.devices[device.id]   # re-fetch — local copy is stale
+            except Exception as err:
+                self.logger.debug(f"state refresh ({device.name}): {err}")
+            seen = _as_int(device.states.get("lastSeenEpoch"), 0)
+            if seen:
+                self.client_last_seen[device.id] = float(seen)
+            if "presence" in device.states and not device.states.get("presence"):
+                device.updateStateOnServer("presence", "away")
             self.next_update = 0.0
 
     def deviceStopComm(self, device):
@@ -444,18 +461,48 @@ class Plugin(indigo.PluginBase):
 
     # ── Client device update ───────────────────────────────────────────────
 
+    def _set_presence(self, device, new_presence):
+        """Apply a debounced presence transition: update states, fire the
+        matching custom event, and log the change once."""
+        if device.states.get("presence") == new_presence:
+            return
+        from datetime import datetime
+        device.updateStatesOnServer([
+            {"key": "presence", "value": new_presence},
+            {"key": "presenceChangedUi", "value": datetime.now().strftime("%H:%M %d-%b")},
+        ])
+        self.logger.info(f"{device.name}: presence -> {new_presence.upper()}")
+        self._fire_event("clientArrived" if new_presence == "home" else "clientLeft")
+
     def _update_client(self, device):
         controller_id = self.client_devices.get(device.id)
         cache = self.controllers.get(controller_id)
         if not cache:
             return
+        now = self._now()
         data = cache["clients_by_mac"].get(device.address)
         if not data:
-            device.updateStateOnServer("onOffState", False, uiValue="Offline")
-            device.updateStateOnServer("clientSummary", "Offline")
-            device.updateStateImageOnServer(indigo.kStateImageSel.SensorTripped)
+            # Not on the network right now. Presence is patient: stay home
+            # until away_minutes of silence (phones nap off WiFi constantly).
+            last_seen = self.client_last_seen.get(device.id, 0.0)
+            minutes = int((now - last_seen) / 60) if last_seen else 9999
+            device.updateStatesOnServer([
+                {"key": "onOffState", "value": False},
+                {"key": "minutesSinceSeen", "value": min(minutes, 99999)},
+                {"key": "offlineSeconds", "value": min(int(now - last_seen) if last_seen else 0, 9999999)},
+                {"key": "clientSummary",
+                 "value": (f"AWAY {minutes}m" if minutes >= self.away_minutes
+                           else f"HOME (offline {minutes}m)")},
+            ])
+            if minutes >= self.away_minutes:
+                self._set_presence(device, "away")
+                device.updateStateImageOnServer(indigo.kStateImageSel.SensorOff)
+            else:
+                device.updateStateImageOnServer(indigo.kStateImageSel.SensorTripped)
             return
 
+        # On the network: home, instantly.
+        self.client_last_seen[device.id] = now
         sat = data.get("satisfaction")
         signal = data.get("signal")
         ap_name = ""
@@ -472,9 +519,12 @@ class Plugin(indigo.PluginBase):
             {"key": "wired", "value": bool(data.get("is_wired", False))},
             {"key": "vendor", "value": data.get("oui", "")},
             {"key": "offlineSeconds", "value": 0},
-            {"key": "clientSummary", "value": f"{signal}dBm sat={sat} @ {ap_name}"},
+            {"key": "minutesSinceSeen", "value": 0},
+            {"key": "lastSeenEpoch", "value": int(now)},
+            {"key": "clientSummary", "value": f"HOME · {signal}dBm sat={sat} @ {ap_name}"},
         ]
         device.updateStatesOnServer(states)
+        self._set_presence(device, "home")
         device.updateStateImageOnServer(indigo.kStateImageSel.SensorOn)
         if sat is not None and sat < self.sat_warn:
             self._fire_event("clientLowSatisfaction")
@@ -654,8 +704,11 @@ class Plugin(indigo.PluginBase):
 
     def closedPrefsConfigUi(self, valuesDict, userCancelled):
         if not userCancelled:
-            self.update_frequency = max(30.0, float(valuesDict.get("updateFrequency", 60)))
-            self.util_warn = int(valuesDict.get("utilWarnPct", 70))
-            self.sat_warn = int(valuesDict.get("satisfactionWarn", 80))
+            # Guarded coercion — a blank/non-numeric field must never crash
+            # the prefs save (estate-wide rule, 05-Jun-2026).
+            self.update_frequency = max(30.0, _as_float(valuesDict.get("updateFrequency"), 60.0))
+            self.util_warn = _as_int(valuesDict.get("utilWarnPct"), 70)
+            self.sat_warn = _as_int(valuesDict.get("satisfactionWarn"), 80)
+            self.away_minutes = max(2, _as_int(valuesDict.get("awayMinutes"), 10))
             self.pushover_alerts = bool(valuesDict.get("pushoverAlerts", False))
             self.next_update = 0.0

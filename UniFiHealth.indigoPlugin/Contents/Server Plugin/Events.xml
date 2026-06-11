@@ -31,4 +31,14 @@
         <Name>WLAN Subsystem Health Not OK</Name>
     </Event>
 
+    <!-- Presence (v0.3.0) — fired on debounced home/away transitions of a
+         tracked client (instant-home, slow-away). -->
+    <Event id="clientArrived">
+        <Name>A Tracked Client Arrived (presence became home)</Name>
+    </Event>
+
+    <Event id="clientLeft">
+        <Name>A Tracked Client Left (presence became away)</Name>
+    </Event>
+
 </Events>
