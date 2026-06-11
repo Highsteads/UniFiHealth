@@ -82,9 +82,15 @@ plugin **creates the Controller and all the AP devices for you** on startup, in 
 (e.g. smart plugs) you want to watch closely, and tick **Pushover WiFi alerts** in
 Configure if you want the cause-level alerts.
 
-## Credits & licence
+## Acknowledgements
 
-MIT licensed. The controller-type detection, dual-URL auth and cookie/CSRF handling
+The controller-type detection, dual-URL auth and cookie/CSRF handling
 are adapted from [FlyingDiver's MIT-licensed Indigo-miniUniFi](https://github.com/FlyingDiver/Indigo-miniUniFi),
 and the AP-command and broad-controller-support ideas are informed by
 [kw123's MIT-licensed unifi plugin](https://github.com/kw123/unifi). With thanks to both.
+
+## Authors & licence
+
+Vibed into existence by **CliveS**, who knew what he wanted, argued until he got it, and tested it on a real house. Typed at inhuman speed by **Claude** (Anthropic), who mostly did as it was told.
+
+© 2026 CliveS · [MIT licence](LICENSE) — copy it, fork it, bend it, break it, fix it, ship it. If it breaks, you get to keep both pieces.
