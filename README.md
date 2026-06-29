@@ -21,8 +21,8 @@ a channel, a band over its utilisation threshold.*
 
 | Device | What it gives you |
 | --- | --- |
-| **UniFi Controller** | Connection status, version, AP/client counts, WLAN health, worst-AP utilisation, worst-client satisfaction, total audit issues. |
-| **UniFi Access Point** | Per band (2.4/5/6 GHz): channel, width, TX power, utilisation, satisfaction, client count; uptime + reboot detection; uplink type; and an **audit** (`configOK` + `auditFlags`). Auto-discovered — including Wi-Fi consoles such as the **UDR / UDM** that broadcast their own Wi-Fi. |
+| **UniFi Controller** | Connection status, version, AP/client counts, WLAN health, worst-AP utilisation, worst-client satisfaction, total audit issues. **Plus (v0.5.0):** Internet/WAN health — the controller's own ISP speedtest (down/up Mbps + when it last ran), internet latency, drops and public WAN IP, and the gateway's CPU/memory; client roll-ups — wired vs wireless, the Wi-Fi-generation mix (Wi-Fi 7/6/5/4/legacy) and a count of slow legacy a/b/g clients, plus the least-happy clients by satisfaction; a count of APs with firmware updates pending; and the RF neighbourhood — how many neighbouring networks are visible and how they're spread across the 2.4 GHz channels. |
+| **UniFi Access Point** | Per band (2.4/5/6 GHz): channel, width, TX power, utilisation, satisfaction, client count; uptime + reboot detection; uplink type; and an **audit** (`configOK` + `auditFlags`). Auto-discovered — including Wi-Fi consoles such as the **UDR / UDM** that broadcast their own Wi-Fi. **Plus (v0.5.0):** firmware version + an update-available flag, CPU/memory/load, the wired uplink speed against what the AP is capable of (so a 2.5 GbE AP stuck at 1 Gb is flagged) with the switch and port it's plugged into, live throughput, and how many neighbouring networks share its 2.4 GHz channel. |
 | **UniFi WiFi Client** | Opt-in, for the devices you care about (e.g. smart plugs): signal, satisfaction, connected AP, SSID, vendor, online/offline. As of **v0.3.0** every tracked client also gets **presence** — a debounced `home`/`away` state designed for phones. |
 
 ## Features
@@ -41,6 +41,12 @@ a channel, a band over its utilisation threshold.*
 - **Config audit** — flags 2.4 GHz at 40 MHz width, TX power = High, min-RSSI off,
   channel over-subscription, and bands over a utilisation threshold. Run on demand
   from the plugin menu, or read it off the device states.
+- **Internet, hardware & RF insight (v0.5.0)** — surfaces a lot of what the controller
+  already knows but never used to leave the controller: your ISP speedtest result and
+  internet latency, which APs need firmware, an AP whose 2.5 GbE uplink has negotiated
+  down to 1 Gb, the one ancient legacy client dragging down 2.4 GHz, and how crowded each
+  Wi-Fi channel is with the neighbours. All as ordinary device states you can chart,
+  trigger on, or show on a dashboard.
 - **Triggers** — AP rebooted, config issue found, controller unreachable, WLAN
   degraded. Numeric thresholds (utilisation, satisfaction) use Indigo's built-in
   device-state triggers on the numeric states.

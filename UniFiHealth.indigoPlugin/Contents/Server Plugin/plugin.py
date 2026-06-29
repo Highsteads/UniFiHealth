@@ -6,8 +6,18 @@
 #              actions for AP restart / locate.
 # Author:      CliveS & Claude Opus 4.8
 # Date:        29-06-2026
-# Version:     0.4.1
+# Version:     0.5.0
 #
+# v0.5.0: surfaces a lot of data the controller already returns. Controller now
+#         publishes Internet/WAN health (ISP speedtest down/up, latency, drops,
+#         public WAN IP, gateway CPU/mem), client roll-ups (wired/wireless,
+#         Wi-Fi generation mix, legacy a/b/g count, worst-clients list), a
+#         firmware-updates-pending count, and an RF-neighbourhood analysis
+#         (stat/rogueap — neighbour AP count per 2.4GHz channel). Each AP now
+#         publishes firmware version + upgradable flag, CPU/mem/load, wired
+#         uplink speed vs capability (under-speed flag), uplink switch+port,
+#         live throughput and co-channel neighbour count. New unifi_api
+#         get_rogue_aps / get_sysinfo. All extras independently guarded.
 # v0.4.1: AP online/offline now derived from the controller's 'state' field
 #         (1 = connected). An adopted-but-disconnected AP is still listed by the
 #         controller (state 0), so the old "missing from list" check reported a
@@ -56,7 +66,7 @@ try:
 except ImportError:
     PUSHOVER_USER_TOKEN = ""
 
-PLUGIN_VERSION = "0.4.1"
+PLUGIN_VERSION = "0.5.0"
 FOLDER_NAME = "UniFi Health"
 
 
@@ -80,6 +90,11 @@ def _as_float(value, default):
 _AP_STATE_UI = {0: "Offline", 2: "Pending adoption", 4: "Upgrading",
                 5: "Provisioning", 6: "Heartbeat missed", 7: "Adopting",
                 9: "Adoption failed", 11: "Isolated"}
+
+# UniFi client radio_proto -> Wi-Fi generation bucket (client-mix roll-up).
+# a/b/g are the legacy standards that hog 2.4 GHz airtime; 'b' is the worst.
+WIFI_GEN = {"be": "7", "ax": "6", "ac": "5", "n": "4", "ng": "4", "na": "4",
+            "g": "legacy", "a": "legacy", "b": "legacy"}
 
 # UniFi radio identifiers -> friendly band labels.
 RADIO_BAND = {"ng": "24", "na": "5", "6e": "6"}
@@ -203,7 +218,14 @@ class Plugin(indigo.PluginBase):
         if device.deviceTypeId == "unifiController":
             self.controllers[device.id] = {"session": None, "devices_by_mac": {},
                                            "clients_by_mac": {}, "ch24": {}, "ap_uptime": {},
-                                           "ap_missing": {}}
+                                           "ap_missing": {}, "rf24": {}}
+            # Register states added since this controller device was created
+            # (e.g. the v0.5.0 WAN / client-mix / RF states) so the next poll
+            # can write them on an existing device without delete+recreate.
+            try:
+                device.stateListOrDisplayStateIdChanged()
+            except Exception as err:
+                self.logger.debug(f"stateListOrDisplayStateIdChanged({device.name}): {err}")
             self.next_update = 0.0
         elif device.deviceTypeId == "unifiAP":
             self.ap_devices[device.id] = _as_int(device.pluginProps.get("unifi_controller"), 0)
@@ -366,6 +388,109 @@ class Plugin(indigo.PluginBase):
         if wlan != "ok":
             self._fire_event("wlanDegraded")
 
+        # v0.5.0 extras (Internet/WAN, client mix, firmware count, RF) — wholly
+        # isolated so a missing field or a rogueap hiccup can never break the poll.
+        try:
+            self._update_controller_extras(device, cache, health, clients, aps)
+        except Exception as err:
+            self.logger.debug(f"{device.name}: controller extras failed: {err}")
+
+    # ── v0.5.0 controller extras — WAN / clients / firmware / RF ────────────
+
+    def _update_controller_extras(self, device, cache, health, clients, aps):
+        """Populate the richer controller states. Each block is independently
+        guarded: one missing subsystem or field must not blank the others."""
+        h = {sub.get("subsystem"): sub for sub in (health or [])}
+
+        # ── Internet / WAN (the controller's own www+wan probe + ISP speedtest) ──
+        try:
+            www = h.get("www", {})
+            wan = h.get("wan", {})
+            device.updateStateOnServer("wanStatus", www.get("status") or wan.get("status") or "unknown")
+            device.updateStateOnServer("wanIp", wan.get("wan_ip", "") or "")
+            device.updateStateOnServer("internetLatencyMs", _as_int(www.get("latency"), 0))
+            device.updateStateOnServer("internetDrops", _as_int(www.get("drops"), 0))
+            device.updateStateOnServer("speedtestDown", round(_as_float(www.get("xput_down"), 0.0), 1))
+            device.updateStateOnServer("speedtestUp", round(_as_float(www.get("xput_up"), 0.0), 1))
+            last = _as_int(www.get("speedtest_lastrun"), 0)
+            device.updateStateOnServer("speedtestAgeHours",
+                                       int((self._now() - last) / 3600) if last else -1)
+            gw = wan.get("gw_system-stats") or {}
+            device.updateStateOnServer("gatewayCpu", int(round(_as_float(gw.get("cpu"), 0.0))))
+            device.updateStateOnServer("gatewayMem", int(round(_as_float(gw.get("mem"), 0.0))))
+        except Exception as err:
+            self.logger.debug(f"WAN extras: {err}")
+
+        # ── Client intelligence roll-ups ──
+        try:
+            wired = sum(1 for c in clients if c.get("is_wired"))
+            gen = {"7": 0, "6": 0, "5": 0, "4": 0, "legacy": 0}
+            legacy = 0
+            for c in clients:
+                if c.get("is_wired"):
+                    continue
+                proto = (c.get("radio_proto") or "").lower()
+                bucket = WIFI_GEN.get(proto)
+                if bucket:
+                    gen[bucket] += 1
+                if proto in ("a", "b", "g"):
+                    legacy += 1
+            device.updateStateOnServer("numWired", wired)
+            device.updateStateOnServer("numWireless", len(clients) - wired)
+            device.updateStateOnServer("numLegacyClients", legacy)
+            device.updateStateOnServer("wifiGenJson", json.dumps(gen, separators=(",", ":")))
+            worst = sorted(
+                (c for c in clients if not c.get("is_wired") and c.get("satisfaction") is not None),
+                key=lambda c: c.get("satisfaction") or 0)[:6]
+            wj = [{"n": c.get("name") or c.get("hostname") or c.get("oui") or c.get("mac"),
+                   "sat": c.get("satisfaction"), "sig": c.get("signal"),
+                   "ap": c.get("last_uplink_name") or ""} for c in worst]
+            device.updateStateOnServer("worstClientsJson", json.dumps(wj, separators=(",", ":")))
+        except Exception as err:
+            self.logger.debug(f"client extras: {err}")
+
+        # ── Firmware updates pending ──
+        try:
+            device.updateStateOnServer("apsNeedingUpdate", sum(1 for ap in aps if ap.get("upgradable")))
+        except Exception as err:
+            self.logger.debug(f"firmware extras: {err}")
+
+        # ── RF neighbourhood (stat/rogueap) — guarded + non-fatal ──
+        try:
+            rogue = cache["session"].get_rogue_aps()
+        except Exception as err:
+            self.logger.debug(f"rogueap fetch: {err}")
+            rogue = None
+        if rogue is not None:
+            try:
+                rf24 = {}
+                n5 = 0
+                for r in rogue:
+                    ch = r.get("channel")
+                    ch = int(ch) if str(ch).isdigit() else None
+                    if ch is None:
+                        continue
+                    if 1 <= ch <= 14:
+                        rf24[str(ch)] = rf24.get(str(ch), 0) + 1
+                    else:
+                        n5 += 1
+                cache["rf24"] = rf24
+                device.updateStateOnServer("neighbourApCount", len(rogue))
+                device.updateStateOnServer("rfJson", json.dumps(
+                    {"total": len(rogue), "ch24": rf24, "n5": n5}, separators=(",", ":")))
+            except Exception as err:
+                self.logger.debug(f"RF extras: {err}")
+
+        # ── Controller version (sysinfo) — fetch once, it rarely changes ──
+        if not device.states.get("controllerVersion"):
+            try:
+                info = cache["session"].get_sysinfo()
+                ver = info.get("version") or info.get("console_display_version") or ""
+                if ver:
+                    device.updateStateOnServer("controllerVersion", ver)
+            except Exception as err:
+                self.logger.debug(f"sysinfo: {err}")
+
     # ── Config audit (the headline feature) ────────────────────────────────
 
     def _audit_ap(self, ap_data, ch24):
@@ -480,9 +605,10 @@ class Plugin(indigo.PluginBase):
         # not serving Wi-Fi, so report Offline.
         state = data.get("state") if data else None
         if not data or state != 1:
+            label = "Offline" if not data else _AP_STATE_UI.get(state, "Offline")
             device.updateStateOnServer("onOffState", False, uiValue="Offline")
-            device.updateStateOnServer(
-                "apSummary", "Offline" if not data else _AP_STATE_UI.get(state, "Offline"))
+            device.updateStateOnServer("apSummary", label)
+            device.updateStateOnServer("apState", label)
             device.updateStateImageOnServer(indigo.kStateImageSel.SensorTripped)
             return
 
@@ -536,6 +662,27 @@ class Plugin(indigo.PluginBase):
         if flags:
             summary += f"  ⚠ {len(flags)}"
         states.append({"key": "apSummary", "value": summary})
+
+        # v0.5.0 — hardware health, uplink quality, firmware, RF neighbours
+        sysst = data.get("system-stats") or {}
+        loadst = data.get("sys_stats") or {}
+        up = data.get("uplink") or {}
+        up_speed = _as_int(up.get("speed"), 0)
+        up_max = _as_int(up.get("max_speed"), 0)
+        ng_chan = str(ng_s.get("channel") or ng_c.get("channel") or "")
+        states.append({"key": "apState", "value": "Connected"})
+        states.append({"key": "firmwareVersion", "value": data.get("version", "") or ""})
+        states.append({"key": "firmwareUpgradable", "value": bool(data.get("upgradable"))})
+        states.append({"key": "cpuPct", "value": int(round(_as_float(sysst.get("cpu"), 0.0)))})
+        states.append({"key": "memPct", "value": int(round(_as_float(sysst.get("mem"), 0.0)))})
+        states.append({"key": "loadAvg1", "value": _as_float(loadst.get("loadavg_1"), 0.0)})
+        states.append({"key": "uplinkSpeedMbps", "value": up_speed})
+        states.append({"key": "uplinkMaxMbps", "value": up_max})
+        states.append({"key": "uplinkUnderspeed", "value": bool(up_speed and up_max and up_speed < up_max)})
+        states.append({"key": "uplinkDevice", "value": up.get("uplink_device_name", "") or ""})
+        states.append({"key": "uplinkPort", "value": _as_int(up.get("uplink_remote_port"), 0)})
+        states.append({"key": "throughputKbps", "value": int((data.get("bytes-r") or 0) / 1024)})
+        states.append({"key": "neighbourCount", "value": (cache.get("rf24") or {}).get(ng_chan, 0)})
 
         # connected wireless clients on this AP (ap_mac maps to this AP's MAC).
         # Published as compact JSON for the Dashboards WiFi AP detail page.

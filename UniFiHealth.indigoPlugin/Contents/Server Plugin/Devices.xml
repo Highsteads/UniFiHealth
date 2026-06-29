@@ -48,6 +48,29 @@
             <State id="worstApUtilisation"><ValueType>Integer</ValueType><TriggerLabel>Worst AP Utilisation %</TriggerLabel><ControlPageLabel>Worst AP Utilisation %</ControlPageLabel></State>
             <State id="worstClientSatisfaction"><ValueType>Integer</ValueType><TriggerLabel>Worst Client Satisfaction</TriggerLabel><ControlPageLabel>Worst Client Satisfaction</ControlPageLabel></State>
             <State id="auditIssues"><ValueType>Integer</ValueType><TriggerLabel>Config Audit Issue Count</TriggerLabel><ControlPageLabel>Config Audit Issue Count</ControlPageLabel></State>
+
+            <!-- v0.5.0 — Internet / WAN health (the controller's own www+wan probe + periodic ISP speedtest) -->
+            <State id="wanStatus"><ValueType>String</ValueType><TriggerLabel>WAN/Internet Status</TriggerLabel><ControlPageLabel>WAN/Internet Status</ControlPageLabel></State>
+            <State id="wanIp"><ValueType>String</ValueType><TriggerLabel>Public WAN IP</TriggerLabel><ControlPageLabel>Public WAN IP</ControlPageLabel></State>
+            <State id="internetLatencyMs"><ValueType>Integer</ValueType><TriggerLabel>Internet Latency (ms)</TriggerLabel><ControlPageLabel>Internet Latency (ms)</ControlPageLabel></State>
+            <State id="internetDrops"><ValueType>Integer</ValueType><TriggerLabel>Internet Drops</TriggerLabel><ControlPageLabel>Internet Drops</ControlPageLabel></State>
+            <State id="speedtestDown"><ValueType>Number</ValueType><TriggerLabel>Speedtest Down (Mbps)</TriggerLabel><ControlPageLabel>Speedtest Down (Mbps)</ControlPageLabel></State>
+            <State id="speedtestUp"><ValueType>Number</ValueType><TriggerLabel>Speedtest Up (Mbps)</TriggerLabel><ControlPageLabel>Speedtest Up (Mbps)</ControlPageLabel></State>
+            <State id="speedtestAgeHours"><ValueType>Integer</ValueType><TriggerLabel>Speedtest Age (hours)</TriggerLabel><ControlPageLabel>Speedtest Age (hours)</ControlPageLabel></State>
+            <State id="gatewayCpu"><ValueType>Integer</ValueType><TriggerLabel>Gateway CPU %</TriggerLabel><ControlPageLabel>Gateway CPU %</ControlPageLabel></State>
+            <State id="gatewayMem"><ValueType>Integer</ValueType><TriggerLabel>Gateway Memory %</TriggerLabel><ControlPageLabel>Gateway Memory %</ControlPageLabel></State>
+
+            <!-- v0.5.0 — client intelligence roll-ups -->
+            <State id="numWired"><ValueType>Integer</ValueType><TriggerLabel>Wired Clients</TriggerLabel><ControlPageLabel>Wired Clients</ControlPageLabel></State>
+            <State id="numWireless"><ValueType>Integer</ValueType><TriggerLabel>Wireless Clients</TriggerLabel><ControlPageLabel>Wireless Clients</ControlPageLabel></State>
+            <State id="numLegacyClients"><ValueType>Integer</ValueType><TriggerLabel>Legacy (a/b/g) Clients</TriggerLabel><ControlPageLabel>Legacy (a/b/g) Clients</ControlPageLabel></State>
+            <State id="wifiGenJson"><ValueType>String</ValueType><TriggerLabel>Wi-Fi Generation Mix (JSON)</TriggerLabel><ControlPageLabel>Wi-Fi Generation Mix (JSON)</ControlPageLabel></State>
+            <State id="worstClientsJson"><ValueType>String</ValueType><TriggerLabel>Worst Clients (JSON)</TriggerLabel><ControlPageLabel>Worst Clients (JSON)</ControlPageLabel></State>
+
+            <!-- v0.5.0 — firmware + RF neighbourhood -->
+            <State id="apsNeedingUpdate"><ValueType>Integer</ValueType><TriggerLabel>APs Needing Firmware Update</TriggerLabel><ControlPageLabel>APs Needing Firmware Update</ControlPageLabel></State>
+            <State id="neighbourApCount"><ValueType>Integer</ValueType><TriggerLabel>Neighbour APs Visible</TriggerLabel><ControlPageLabel>Neighbour APs Visible</ControlPageLabel></State>
+            <State id="rfJson"><ValueType>String</ValueType><TriggerLabel>RF Neighbourhood (JSON)</TriggerLabel><ControlPageLabel>RF Neighbourhood (JSON)</ControlPageLabel></State>
         </States>
         <UiDisplayStateId>status</UiDisplayStateId>
     </Device>
@@ -108,6 +131,21 @@
                  {n:name, b:band, sig:signal dBm, sat:satisfaction}. Consumed by
                  the Dashboards WiFi AP detail page. -->
             <State id="clientsJson"><ValueType>String</ValueType><TriggerLabel>Connected Clients (JSON)</TriggerLabel><ControlPageLabel>Connected Clients (JSON)</ControlPageLabel></State>
+
+            <!-- v0.5.0 — hardware health, uplink, firmware, RF neighbours -->
+            <State id="apState"><ValueType>String</ValueType><TriggerLabel>Device State</TriggerLabel><ControlPageLabel>Device State</ControlPageLabel></State>
+            <State id="firmwareVersion"><ValueType>String</ValueType><TriggerLabel>Firmware Version</TriggerLabel><ControlPageLabel>Firmware Version</ControlPageLabel></State>
+            <State id="firmwareUpgradable"><ValueType>Boolean</ValueType><TriggerLabel>Firmware Update Available</TriggerLabel><ControlPageLabel>Firmware Update Available</ControlPageLabel></State>
+            <State id="cpuPct"><ValueType>Integer</ValueType><TriggerLabel>CPU %</TriggerLabel><ControlPageLabel>CPU %</ControlPageLabel></State>
+            <State id="memPct"><ValueType>Integer</ValueType><TriggerLabel>Memory %</TriggerLabel><ControlPageLabel>Memory %</ControlPageLabel></State>
+            <State id="loadAvg1"><ValueType>Number</ValueType><TriggerLabel>Load Average (1m)</TriggerLabel><ControlPageLabel>Load Average (1m)</ControlPageLabel></State>
+            <State id="uplinkSpeedMbps"><ValueType>Integer</ValueType><TriggerLabel>Uplink Speed (Mbps)</TriggerLabel><ControlPageLabel>Uplink Speed (Mbps)</ControlPageLabel></State>
+            <State id="uplinkMaxMbps"><ValueType>Integer</ValueType><TriggerLabel>Uplink Max Speed (Mbps)</TriggerLabel><ControlPageLabel>Uplink Max Speed (Mbps)</ControlPageLabel></State>
+            <State id="uplinkUnderspeed"><ValueType>Boolean</ValueType><TriggerLabel>Uplink Below Capability</TriggerLabel><ControlPageLabel>Uplink Below Capability</ControlPageLabel></State>
+            <State id="uplinkDevice"><ValueType>String</ValueType><TriggerLabel>Uplink Switch</TriggerLabel><ControlPageLabel>Uplink Switch</ControlPageLabel></State>
+            <State id="uplinkPort"><ValueType>Integer</ValueType><TriggerLabel>Uplink Switch Port</TriggerLabel><ControlPageLabel>Uplink Switch Port</ControlPageLabel></State>
+            <State id="throughputKbps"><ValueType>Integer</ValueType><TriggerLabel>Throughput (kB/s)</TriggerLabel><ControlPageLabel>Throughput (kB/s)</ControlPageLabel></State>
+            <State id="neighbourCount"><ValueType>Integer</ValueType><TriggerLabel>Co-channel Neighbour APs (2.4GHz)</TriggerLabel><ControlPageLabel>Co-channel Neighbour APs (2.4GHz)</ControlPageLabel></State>
         </States>
         <UiDisplayStateId>apSummary</UiDisplayStateId>
     </Device>

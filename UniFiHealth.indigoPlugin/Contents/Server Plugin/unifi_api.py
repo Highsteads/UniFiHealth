@@ -6,8 +6,11 @@
 #              controllers. Read endpoints for health/diagnostics; cmd/devmgr
 #              for AP restart / PoE power-cycle / locate.
 # Author:      CliveS & Claude Opus 4.8
-# Date:        30-05-2026
-# Version:     1.0
+# Date:        29-06-2026
+# Version:     1.1
+#
+# v1.1: added get_rogue_aps (stat/rogueap, RF-neighbour analysis) and
+#       get_sysinfo (stat/sysinfo, controller version).
 #
 # Credits: the controller-type detection, dual-URL templates and cookie/CSRF
 # handling are adapted from FlyingDiver's MIT-licensed Indigo-miniUniFi
@@ -125,8 +128,20 @@ class UniFiSession:
         return self._get("stat/sta", site)
 
     def get_health(self, site="default"):
-        """stat/health — per-subsystem (wlan / wan / lan) status."""
+        """stat/health — per-subsystem (wlan / wan / www / lan) status, incl.
+        the controller's periodic ISP speedtest result and internet latency."""
         return self._get("stat/health", site)
+
+    def get_rogue_aps(self, site="default"):
+        """stat/rogueap — neighbouring / rogue BSSIDs the APs can hear. Powers
+        the RF-neighbourhood (co-channel congestion) analysis."""
+        return self._get("stat/rogueap", site)
+
+    def get_sysinfo(self, site="default"):
+        """stat/sysinfo — one row of controller/console build info. Returns the
+        single row (or {}); the caller wants version, not a list."""
+        rows = self._get("stat/sysinfo", site)
+        return rows[0] if rows else {}
 
     # ── commands (cmd/devmgr) — restart / power-cycle / locate ─────────────
     def command(self, mac, cmd, site="default", **extra):
