@@ -31,6 +31,9 @@
         <Label>Auto-remove AP devices:</Label>
         <Description>Delete the Indigo device when its access point is forgotten by the controller. An AP still used by a trigger, schedule or control page is kept and flagged, never deleted.</Description>
     </Field>
+    <Field id="apOfflineGraceMinutes" type="textfield" defaultValue="3" tooltip="Minutes an AP must be continuously off the controller before it's marked Offline. Rides out reboots / firmware upgrades so they don't fire 'AP down' alerts; a real outage still alerts after this long. 0 = mark offline immediately.">
+        <Label>AP offline grace (minutes):</Label>
+    </Field>
     <Field id="pushoverAlerts" type="checkbox" defaultValue="false">
         <Label>Pushover WiFi alerts:</Label>
         <Description>Page once with the cause (AP rebooted / controller unreachable) instead of the symptom flapping</Description>

@@ -51,6 +51,12 @@ a channel, a band over its utilisation threshold.*
   degraded. Numeric thresholds (utilisation, satisfaction) use Indigo's built-in
   device-state triggers on the numeric states.
 - **AP actions** — restart an AP, locate it (flash the LED), via `cmd/devmgr`.
+- **Debounced offline detection** — an access point only flips to *Offline* (and fires
+  any "AP down" automation you've built) once it's been off the controller continuously
+  for the *AP offline grace* (default 3 minutes), so the routine reboots of a firmware
+  upgrade don't trigger a flurry of false alarms — while a genuine outage still alerts.
+  During the grace window the device stays up but its state shows the live reason
+  (e.g. *Upgrading*). Set the grace to 0 in the plugin config to alert immediately.
 - **Phone presence (v0.3.0)** — track a phone as a WiFi Client device and it gains a
   `presence` state with proper debounce: connecting marks it `home` instantly, but it
   only flips to `away` after a configurable quiet period (default 10 minutes), because

@@ -6,8 +6,15 @@
 #              actions for AP restart / locate.
 # Author:      CliveS & Claude Opus 4.8
 # Date:        29-06-2026
-# Version:     0.5.0
+# Version:     0.5.1
 #
+# v0.5.1: AP offline detection is now debounced — onState only flips to Offline
+#         (firing "AP down" automations) after an AP has been continuously
+#         non-connected for apOfflineGraceMinutes (default 3). This rides out
+#         reboot / firmware-upgrade blips while still catching a genuine outage.
+#         During the grace window the AP stays "up" but apState shows the live
+#         label (e.g. "Upgrading"). New apOfflineGraceMinutes pref; tidied the
+#         state-code labels.
 # v0.5.0: surfaces a lot of data the controller already returns. Controller now
 #         publishes Internet/WAN health (ISP speedtest down/up, latency, drops,
 #         public WAN IP, gateway CPU/mem), client roll-ups (wired/wireless,
@@ -66,7 +73,7 @@ try:
 except ImportError:
     PUSHOVER_USER_TOKEN = ""
 
-PLUGIN_VERSION = "0.5.0"
+PLUGIN_VERSION = "0.5.1"
 FOLDER_NAME = "UniFi Health"
 
 
@@ -87,9 +94,11 @@ def _as_float(value, default):
 
 # UniFi device 'state' codes — 1 = connected/online. Anything else means the AP
 # is adopted but not currently serving Wi-Fi; these are the labels we surface.
-_AP_STATE_UI = {0: "Offline", 2: "Pending adoption", 4: "Upgrading",
+# Codes vary a little across firmware, so unmapped values fall back to a generic
+# label rather than asserting a wrong cause.
+_AP_STATE_UI = {0: "Offline", 1: "Connected", 2: "Pending adoption", 4: "Upgrading",
                 5: "Provisioning", 6: "Heartbeat missed", 7: "Adopting",
-                9: "Adoption failed", 11: "Isolated"}
+                8: "Deleting", 9: "Adoption failed", 11: "Isolated"}
 
 # UniFi client radio_proto -> Wi-Fi generation bucket (client-mix roll-up).
 # a/b/g are the legacy standards that hog 2.4 GHz airtime; 'b' is the worst.
@@ -142,6 +151,11 @@ class Plugin(indigo.PluginBase):
         # Presence (v0.3.0): minutes off the network before a tracked client
         # flips to away. Home is instant; away waits this long.
         self.away_minutes = max(2, _as_int(pluginPrefs.get("awayMinutes"), 10))
+        # AP offline debounce (v0.5.1): minutes an AP must be continuously
+        # non-connected before onState flips to Offline (and any "AP down"
+        # automation fires). Rides out reboot / firmware-upgrade blips; a
+        # genuine outage still alerts after this long.
+        self.ap_offline_grace_secs = max(0, _as_int(pluginPrefs.get("apOfflineGraceMinutes"), 3)) * 60
 
         self.controllers = {}      # controllerDevId -> cache dict
         self.ap_devices = {}       # apDevId -> controllerDevId
@@ -218,7 +232,7 @@ class Plugin(indigo.PluginBase):
         if device.deviceTypeId == "unifiController":
             self.controllers[device.id] = {"session": None, "devices_by_mac": {},
                                            "clients_by_mac": {}, "ch24": {}, "ap_uptime": {},
-                                           "ap_missing": {}, "rf24": {}}
+                                           "ap_missing": {}, "rf24": {}, "ap_off_since": {}}
             # Register states added since this controller device was created
             # (e.g. the v0.5.0 WAN / client-mix / RF states) so the next poll
             # can write them on an existing device without delete+recreate.
@@ -598,18 +612,37 @@ class Plugin(indigo.PluginBase):
         if not cache:
             return
         data = cache["devices_by_mac"].get(device.address)
-        # 'state' 1 = connected. An adopted AP that's powered off / disconnected
-        # is still LISTED by the controller (state 0), so checking only "missing
-        # from the list" reported a dead AP as online. A missing entry (data
-        # None) means the controller no longer knows it at all. Either way it's
-        # not serving Wi-Fi, so report Offline.
+        # 'state' 1 = connected. Any other value (or a missing entry) means the
+        # AP isn't fully serving Wi-Fi — but a reboot / firmware upgrade /
+        # provision is a TRANSIENT non-connected blip. So onState is debounced:
+        # it only flips to Offline (firing any "AP down" automation) once the AP
+        # has been continuously non-connected for ap_offline_grace_secs. During
+        # the grace window we keep it 'up' but surface the live state label, so a
+        # dashboard can show "Upgrading" without the AP being marked down.
         state = data.get("state") if data else None
-        if not data or state != 1:
-            label = "Offline" if not data else _AP_STATE_UI.get(state, "Offline")
+        online_now = (state == 1)
+        off_since = cache.setdefault("ap_off_since", {})
+        if online_now:
+            off_since.pop(device.address, None)
+        else:
+            off_since.setdefault(device.address, self._now())
+        offline_secs = 0 if online_now else (self._now() - off_since.get(device.address, self._now()))
+        label = (_AP_STATE_UI.get(state, "Unavailable") if data else "Offline")
+
+        if not online_now and offline_secs >= self.ap_offline_grace_secs:
+            # sustained non-connected — genuinely down, alert
             device.updateStateOnServer("onOffState", False, uiValue="Offline")
             device.updateStateOnServer("apSummary", label)
             device.updateStateOnServer("apState", label)
             device.updateStateImageOnServer(indigo.kStateImageSel.SensorTripped)
+            return
+        if not online_now:
+            # transient blip within the grace window — keep it up, show the
+            # live label (e.g. "Upgrading"), don't fire the down-alert.
+            device.updateStateOnServer("onOffState", True)
+            device.updateStateOnServer("apSummary", f"{label}…")
+            device.updateStateOnServer("apState", label)
+            device.updateStateImageOnServer(indigo.kStateImageSel.SensorOn)
             return
 
         cfg = {r.get("radio"): r for r in data.get("radio_table", [])}
@@ -968,5 +1001,6 @@ class Plugin(indigo.PluginBase):
             self.util_warn = _as_int(valuesDict.get("utilWarnPct"), 70)
             self.sat_warn = _as_int(valuesDict.get("satisfactionWarn"), 80)
             self.away_minutes = max(2, _as_int(valuesDict.get("awayMinutes"), 10))
+            self.ap_offline_grace_secs = max(0, _as_int(valuesDict.get("apOfflineGraceMinutes"), 3)) * 60
             self.pushover_alerts = bool(valuesDict.get("pushoverAlerts", False))
             self.next_update = 0.0
