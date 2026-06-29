@@ -6,8 +6,12 @@
 #              actions for AP restart / locate.
 # Author:      CliveS & Claude Opus 4.8
 # Date:        29-06-2026
-# Version:     0.4.0
+# Version:     0.4.1
 #
+# v0.4.1: AP online/offline now derived from the controller's 'state' field
+#         (1 = connected). An adopted-but-disconnected AP is still listed by the
+#         controller (state 0), so the old "missing from list" check reported a
+#         dead AP as online. Now reports Offline (with the reason where known).
 # v0.4.0: AP discovery now keys off the controller's is_access_point flag (with
 #         a legacy 'uap' fallback), so Wi-Fi consoles like the UDR/UDM are found
 #         and shown as access points. Forgotten/un-adopted APs are now
@@ -52,7 +56,7 @@ try:
 except ImportError:
     PUSHOVER_USER_TOKEN = ""
 
-PLUGIN_VERSION = "0.4.0"
+PLUGIN_VERSION = "0.4.1"
 FOLDER_NAME = "UniFi Health"
 
 
@@ -70,6 +74,12 @@ def _as_float(value, default):
         return float(value)
     except (ValueError, TypeError):
         return default
+
+# UniFi device 'state' codes — 1 = connected/online. Anything else means the AP
+# is adopted but not currently serving Wi-Fi; these are the labels we surface.
+_AP_STATE_UI = {0: "Offline", 2: "Pending adoption", 4: "Upgrading",
+                5: "Provisioning", 6: "Heartbeat missed", 7: "Adopting",
+                9: "Adoption failed", 11: "Isolated"}
 
 # UniFi radio identifiers -> friendly band labels.
 RADIO_BAND = {"ng": "24", "na": "5", "6e": "6"}
@@ -463,9 +473,16 @@ class Plugin(indigo.PluginBase):
         if not cache:
             return
         data = cache["devices_by_mac"].get(device.address)
-        if not data:
+        # 'state' 1 = connected. An adopted AP that's powered off / disconnected
+        # is still LISTED by the controller (state 0), so checking only "missing
+        # from the list" reported a dead AP as online. A missing entry (data
+        # None) means the controller no longer knows it at all. Either way it's
+        # not serving Wi-Fi, so report Offline.
+        state = data.get("state") if data else None
+        if not data or state != 1:
             device.updateStateOnServer("onOffState", False, uiValue="Offline")
-            device.updateStateOnServer("apSummary", "Offline")
+            device.updateStateOnServer(
+                "apSummary", "Offline" if not data else _AP_STATE_UI.get(state, "Offline"))
             device.updateStateImageOnServer(indigo.kStateImageSel.SensorTripped)
             return
 
