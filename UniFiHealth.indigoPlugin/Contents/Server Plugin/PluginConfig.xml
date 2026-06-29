@@ -25,7 +25,11 @@
 
     <Field id="autoCreateAPs" type="checkbox" defaultValue="true">
         <Label>Auto-create AP devices:</Label>
-        <Description>Create an Indigo device for every access point found</Description>
+        <Description>Create an Indigo device for every access point found (includes Wi-Fi consoles like the UDR/UDM)</Description>
+    </Field>
+    <Field id="autoRemoveAPs" type="checkbox" defaultValue="true">
+        <Label>Auto-remove AP devices:</Label>
+        <Description>Delete the Indigo device when its access point is forgotten by the controller. An AP still used by a trigger, schedule or control page is kept and flagged, never deleted.</Description>
     </Field>
     <Field id="pushoverAlerts" type="checkbox" defaultValue="false">
         <Label>Pushover WiFi alerts:</Label>

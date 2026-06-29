@@ -22,14 +22,19 @@ a channel, a band over its utilisation threshold.*
 | Device | What it gives you |
 | --- | --- |
 | **UniFi Controller** | Connection status, version, AP/client counts, WLAN health, worst-AP utilisation, worst-client satisfaction, total audit issues. |
-| **UniFi Access Point** | Per band (2.4/5/6 GHz): channel, width, TX power, utilisation, satisfaction, client count; uptime + reboot detection; uplink type; and an **audit** (`configOK` + `auditFlags`). Auto-discovered. |
+| **UniFi Access Point** | Per band (2.4/5/6 GHz): channel, width, TX power, utilisation, satisfaction, client count; uptime + reboot detection; uplink type; and an **audit** (`configOK` + `auditFlags`). Auto-discovered — including Wi-Fi consoles such as the **UDR / UDM** that broadcast their own Wi-Fi. |
 | **UniFi WiFi Client** | Opt-in, for the devices you care about (e.g. smart plugs): signal, satisfaction, connected AP, SSID, vendor, online/offline. As of **v0.3.0** every tracked client also gets **presence** — a debounced `home`/`away` state designed for phones. |
 
 ## Features
 
 - **Auto-setup** — on startup it creates a "UniFi Health" device folder, auto-creates
   the Controller (when credentials are present) and a device for every access point,
-  all filed into the folder. Delete the lot, restart, and it rebuilds itself.
+  all filed into the folder. Delete the lot, restart, and it rebuilds itself. The AP
+  list stays in step with the controller: new access points are added automatically,
+  and one that's forgotten/un-adopted is removed automatically too — unless a trigger,
+  schedule or control page still uses it, in which case it's kept and flagged rather
+  than deleted. Both behaviours are on by default and can be turned off in the plugin
+  config (*Auto-create / Auto-remove AP devices*).
 - **Cause-level Pushover alerts** (opt-in) — pages you *once* with the actual cause
   (an AP reboot, or the controller going unreachable) instead of the flood of
   "device offline" alerts the dropped clients would otherwise generate.

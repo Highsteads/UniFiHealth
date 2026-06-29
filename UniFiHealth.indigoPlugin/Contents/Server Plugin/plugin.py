@@ -5,9 +5,13 @@
 #              for UniFi controllers (UDM/UDR + legacy). Read-mostly; cmd/devmgr
 #              actions for AP restart / locate.
 # Author:      CliveS & Claude Opus 4.8
-# Date:        10-06-2026
-# Version:     0.3.0
+# Date:        29-06-2026
+# Version:     0.4.0
 #
+# v0.4.0: AP discovery now keys off the controller's is_access_point flag (with
+#         a legacy 'uap' fallback), so Wi-Fi consoles like the UDR/UDM are found
+#         and shown as access points. Forgotten/un-adopted APs are now
+#         auto-removed too (dependency-safe, grace period, autoRemoveAPs pref).
 # v0.2.0: each AP now publishes its connected wireless clients as a clientsJson
 #         state (name/band/signal/satisfaction) for the Dashboards WiFi AP page.
 # v0.1.1: AP device name auto-syncs to the UniFi name (handles swaps/renames);
@@ -48,7 +52,7 @@ try:
 except ImportError:
     PUSHOVER_USER_TOKEN = ""
 
-PLUGIN_VERSION = "0.3.0"
+PLUGIN_VERSION = "0.4.0"
 FOLDER_NAME = "UniFi Health"
 
 
@@ -71,6 +75,23 @@ def _as_float(value, default):
 RADIO_BAND = {"ng": "24", "na": "5", "6e": "6"}
 # Client records report the radio they're on as ng/na/6e — map to a UI band label.
 CLIENT_BAND_UI = {"ng": "2.4", "na": "5", "6e": "6"}
+
+
+def _is_access_point(data):
+    """True when this stat/device entry is an access point. Keyed off the
+    controller's own is_access_point flag, with a legacy 'uap' fallback. This
+    catches Wi-Fi-capable consoles such as the UDR/UDM — controller type 'udm',
+    NOT 'uap' — which broadcast Wi-Fi and report is_access_point=True. Pure
+    gateways and switches (usw) report is_access_point False/None and are
+    correctly excluded."""
+    return bool(data.get("is_access_point")) or data.get("type") == "uap"
+
+
+# Consecutive successful polls an AP must be absent from the controller's device
+# list before its Indigo device is auto-removed — guards against a single odd
+# controller response deleting a device. Forgotten/un-adopted APs leave the
+# list entirely; merely offline APs stay in it (state 0), so are never reaped.
+AP_REMOVE_GRACE_POLLS = 3
 
 
 def secs_to_ui(seconds):
@@ -171,7 +192,8 @@ class Plugin(indigo.PluginBase):
         self.logger.debug(f"deviceStartComm: {device.name}")
         if device.deviceTypeId == "unifiController":
             self.controllers[device.id] = {"session": None, "devices_by_mac": {},
-                                           "clients_by_mac": {}, "ch24": {}, "ap_uptime": {}}
+                                           "clients_by_mac": {}, "ch24": {}, "ap_uptime": {},
+                                           "ap_missing": {}}
             self.next_update = 0.0
         elif device.deviceTypeId == "unifiAP":
             self.ap_devices[device.id] = _as_int(device.pluginProps.get("unifi_controller"), 0)
@@ -285,7 +307,7 @@ class Plugin(indigo.PluginBase):
 
         # cross-AP 2.4 GHz channel reuse map (for the audit)
         ch24 = {}
-        aps = [d for d in devices if d.get("type") == "uap"]
+        aps = [d for d in devices if _is_access_point(d)]
         for ap in aps:
             for radio in ap.get("radio_table_stats", []):   # live channel, not "auto" config
                 if radio.get("radio") == "ng" and radio.get("channel"):
@@ -297,7 +319,7 @@ class Plugin(indigo.PluginBase):
             existing = {d.address for d in indigo.devices.iter("self") if d.deviceTypeId == "unifiAP"}
             folder_id = self._ensure_folder()
             for mac, ap in cache["devices_by_mac"].items():
-                if ap.get("type") == "uap" and mac not in existing:
+                if _is_access_point(ap) and mac not in existing:
                     try:
                         indigo.device.create(protocol=indigo.kProtocol.Plugin,
                                              name=f"UniFi AP {ap.get('name', mac)}",
@@ -306,6 +328,9 @@ class Plugin(indigo.PluginBase):
                         self.logger.info(f"Auto-created AP device: {ap.get('name', mac)}")
                     except Exception as err:
                         self.logger.error(f"auto-create AP {mac}: {err}")
+
+        # auto-remove devices for APs the controller has forgotten (own pref)
+        self._reap_removed_aps(device.id, set(cache["devices_by_mac"]))
 
         # controller roll-up states
         wlan = next((h.get("status") for h in health if h.get("subsystem") == "wlan"), "unknown")
@@ -357,6 +382,78 @@ class Plugin(indigo.PluginBase):
         if na and na.get("tx_power_mode") == "high":
             flags.append("5GHz TX power High")
         return flags
+
+    # ── Auto-remove forgotten APs ──────────────────────────────────────────
+
+    def _reap_removed_aps(self, controller_id, present_macs):
+        """Auto-remove unifiAP devices for APs the controller has forgotten
+        (un-adopted / replaced) — distinct from merely offline, where the AP is
+        still listed (state 0) and so stays in present_macs. Dependency-safe:
+        an AP still referenced by a trigger, schedule, action group or control
+        page is kept and flagged once, never deleted. Gated on the
+        autoRemoveAPs pref plus a grace period so one odd controller response
+        can't delete a device."""
+        if not self.pluginPrefs.get("autoRemoveAPs", True):
+            return
+        cache = self.controllers.get(controller_id)
+        if cache is None:
+            return
+        missing = cache.setdefault("ap_missing", {})
+        ap_ids = [ap_id for ap_id, ctrl in self.ap_devices.items() if ctrl == controller_id]
+        for ap_id in ap_ids:
+            try:
+                ap_dev = indigo.devices[ap_id]
+            except Exception:
+                self.ap_devices.pop(ap_id, None)
+                continue
+            mac = ap_dev.address
+            if mac in present_macs:
+                missing.pop(mac, None)
+                continue
+            # absent from the controller's device list on a successful poll
+            missing[mac] = missing.get(mac, 0) + 1
+            if missing[mac] < AP_REMOVE_GRACE_POLLS:
+                continue
+            dependents = self._device_dependents(ap_dev)
+            if dependents:
+                if missing[mac] == AP_REMOVE_GRACE_POLLS:   # warn once, on first block
+                    self.logger.warning(
+                        f"{ap_dev.name}: removed from the controller but still used by "
+                        f"{dependents} — left in place. Delete it manually once unreferenced.")
+                    try:
+                        ap_dev.updateStateOnServer("apSummary", "Removed from controller (still referenced)")
+                    except Exception:
+                        pass
+                missing[mac] = AP_REMOVE_GRACE_POLLS   # pin — no unbounded growth, no re-warn
+                continue
+            try:
+                name = ap_dev.name
+                indigo.device.delete(ap_dev)
+                self.ap_devices.pop(ap_id, None)
+                missing.pop(mac, None)
+                self.logger.info(f"Auto-removed AP device (forgotten by controller): {name}")
+            except Exception as err:
+                self.logger.error(f"auto-remove AP {ap_dev.name}: {err}")
+
+    @staticmethod
+    def _device_dependents(device):
+        """Summarise the triggers / schedules / action groups / control pages
+        that reference this device, '' when nothing does. On any error returns
+        a non-empty sentinel so a destructive auto-remove errs towards keeping
+        the device."""
+        try:
+            deps = indigo.device.getDependencies(device.id)
+        except Exception:
+            return "an unknown reference (dependency check failed)"
+        parts = []
+        for key in ("triggers", "schedules", "actionGroups", "controlPages"):
+            try:
+                items = deps.get(key) or []
+            except Exception:
+                items = []
+            if items:
+                parts.append(f"{len(items)} {key}")
+        return ", ".join(parts)
 
     # ── AP device update ───────────────────────────────────────────────────
 
@@ -572,7 +669,14 @@ class Plugin(indigo.PluginBase):
         return [(str(dev_id), indigo.devices[dev_id].name) for dev_id in self.controllers]
 
     def get_ap_list(self, filter="", valuesDict=None, typeId="", targetId=0):
-        return self._device_picker(valuesDict, "uap")
+        try:
+            cache = self.controllers[int(valuesDict["unifi_controller"])]
+        except (KeyError, ValueError, TypeError):
+            return []
+        items = [(mac, data.get("name") or f"{data.get('model')} {mac}")
+                 for mac, data in cache["devices_by_mac"].items() if _is_access_point(data)]
+        items.sort(key=lambda t: str(t[1]).lower())
+        return items
 
     def get_client_list(self, filter="", valuesDict=None, typeId="", targetId=0):
         try:
@@ -581,16 +685,6 @@ class Plugin(indigo.PluginBase):
             return []
         items = [(mac, data.get("name") or data.get("hostname") or data.get("oui") or mac)
                  for mac, data in cache["clients_by_mac"].items()]
-        items.sort(key=lambda t: str(t[1]).lower())
-        return items
-
-    def _device_picker(self, valuesDict, dev_type):
-        try:
-            cache = self.controllers[int(valuesDict["unifi_controller"])]
-        except (KeyError, ValueError, TypeError):
-            return []
-        items = [(mac, data.get("name") or f"{data.get('model')} {mac}")
-                 for mac, data in cache["devices_by_mac"].items() if data.get("type") == dev_type]
         items.sort(key=lambda t: str(t[1]).lower())
         return items
 
@@ -645,7 +739,7 @@ class Plugin(indigo.PluginBase):
         created = 0
         for controller_id, cache in self.controllers.items():
             for mac, data in cache["devices_by_mac"].items():
-                if data.get("type") != "uap" or mac in existing:
+                if not _is_access_point(data) or mac in existing:
                     continue
                 existing.add(mac)
                 name = f"UniFi AP {data.get('name', mac)}"
@@ -670,7 +764,7 @@ class Plugin(indigo.PluginBase):
             if shared:
                 self.logger.info(f"2.4GHz channels shared by >2 APs: {shared}")
             for mac, data in cache["devices_by_mac"].items():
-                if data.get("type") != "uap":
+                if not _is_access_point(data):
                     continue
                 flags = self._audit_ap(data, ch24)
                 name = data.get("name", mac)
@@ -688,7 +782,7 @@ class Plugin(indigo.PluginBase):
             try:
                 session = self._session_for(device)
                 devices = session.get_devices()
-                aps = [d for d in devices if d.get("type") == "uap"]
+                aps = [d for d in devices if _is_access_point(d)]
                 self.logger.info(f"{device.name}: connection OK — {len(aps)} APs, "
                                  f"{len(session.get_clients())} clients")
             except UniFiError as err:
