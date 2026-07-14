@@ -6,8 +6,14 @@
 #              actions for AP restart / locate.
 # Author:      CliveS & Claude Opus 4.8
 # Date:        29-06-2026
-# Version:     0.6.1
+# Version:     0.6.2
 #
+# v0.6.2: FAILURE ISOLATION in runConcurrentThread — the whole per-tick poll
+#         body is now wrapped so one transient failure (live 14-Jul-2026: the
+#         controller took >8s and the requests Read-timeout escaped, killing
+#         the thread until Indigo's 10s auto-restart) logs-and-skips the
+#         cycle. First failure warns, further failures go quiet (debug), and
+#         recovery logs an info line with the failed-cycle count.
 # v0.6.1: NEW "Geofence Switch" device type (type="relay") — a pure status
 #         switch for the fusion (actionControlDevice just sets onOffState).
 #         The Virtual Devices plugin's pseudoRelay turned out to be an
@@ -93,7 +99,7 @@ except ImportError:
 
 from presence_fusion import fused_presence, presence_source
 
-PLUGIN_VERSION = "0.6.1"
+PLUGIN_VERSION = "0.6.2"
 FOLDER_NAME = "UniFi Health"
 
 
@@ -235,17 +241,37 @@ class Plugin(indigo.PluginBase):
             return 0
 
     def runConcurrentThread(self):
+        # Failure isolation (v0.6.2): the WHOLE per-tick body is wrapped so a
+        # transient failure (e.g. the controller taking >8s to answer — seen
+        # live 14-Jul-2026 as a Read timed out that killed this thread) logs
+        # and skips the cycle instead of taking the loop down. First failure
+        # warns; a continuing outage stays quiet until recovery is logged.
+        poll_failures = 0
         try:
             while True:
                 now = self._now()
                 if now >= self.next_update:
                     self.next_update = now + self.update_frequency
-                    for controller_id in list(self.controllers):
-                        self._poll_controller(indigo.devices[controller_id])
-                    for ap_id in list(self.ap_devices):
-                        self._update_ap(indigo.devices[ap_id])
-                    for client_id in list(self.client_devices):
-                        self._update_client(indigo.devices[client_id])
+                    try:
+                        for controller_id in list(self.controllers):
+                            self._poll_controller(indigo.devices[controller_id])
+                        for ap_id in list(self.ap_devices):
+                            self._update_ap(indigo.devices[ap_id])
+                        for client_id in list(self.client_devices):
+                            self._update_client(indigo.devices[client_id])
+                        if poll_failures:
+                            self.logger.info(
+                                f"controller poll recovered after {poll_failures} failed cycle(s)")
+                            poll_failures = 0
+                    except self.StopThread:
+                        raise
+                    except Exception as err:
+                        poll_failures += 1
+                        if poll_failures == 1:
+                            self.logger.warning(
+                                f"controller poll failed (will keep retrying quietly): {err}")
+                        else:
+                            self.logger.debug(f"controller poll failed x{poll_failures}: {err}")
                 self.sleep(2.0)
         except self.StopThread:
             pass
