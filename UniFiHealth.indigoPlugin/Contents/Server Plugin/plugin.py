@@ -6,8 +6,17 @@
 #              actions for AP restart / locate.
 # Author:      CliveS & Claude Opus 4.8
 # Date:        29-06-2026
-# Version:     0.6.0
+# Version:     0.6.1
 #
+# v0.6.1: NEW "Geofence Switch" device type (type="relay") — a pure status
+#         switch for the fusion (actionControlDevice just sets onOffState).
+#         The Virtual Devices plugin's pseudoRelay turned out to be an
+#         action-group front, not a dumb switch: bare ones error ("improperly
+#         configured - incorrect ON execution type") and never change state,
+#         so HomeKit flips silently did nothing. deviceUpdated's geofence
+#         fast-path now runs BEFORE the own-plugin guard (the switch is ours
+#         now; loop-safe — watched and written device sets are disjoint), and
+#         the geofence picker lists our own switches first.
 # v0.6.0: GEOFENCE FUSION — a unifiClient may pair an optional on/off device
 #         (a virtual switch flipped by the phone's HomeKit leave/arrive
 #         automations via HomeKitLink-Siri; ON = inside the home zone).
@@ -84,7 +93,7 @@ except ImportError:
 
 from presence_fusion import fused_presence, presence_source
 
-PLUGIN_VERSION = "0.6.0"
+PLUGIN_VERSION = "0.6.1"
 FOLDER_NAME = "UniFi Health"
 
 
@@ -321,18 +330,41 @@ class Plugin(indigo.PluginBase):
 
     def deviceUpdated(self, orig_dev, new_dev):
         super().deviceUpdated(orig_dev, new_dev)
+        # Geofence fast-path BEFORE the own-plugin guard: since v0.6.1 the
+        # geofence switch is one of OUR devices (geofenceSwitch type). This is
+        # loop-safe because the watched set (geofence switches) and the
+        # written set (unifiClient presence devices) are disjoint —
+        # _update_client never writes a geofence switch, and client-device
+        # updates fall through to the guard below.
+        watchers = self.geofence_watch.get(new_dev.id)
+        if watchers and bool(getattr(orig_dev, "onState", None)) != bool(getattr(new_dev, "onState", None)):
+            for client_id in list(watchers):
+                try:
+                    self._update_client(indigo.devices[client_id])
+                except Exception as err:
+                    self.logger.debug(f"geofence fast-path update ({client_id}): {err}")
+            return
         if new_dev.pluginId == self.pluginId:   # loop guard — ignore own devices
             return
-        watchers = self.geofence_watch.get(new_dev.id)
-        if not watchers:
+
+    def actionControlDevice(self, action, dev):
+        """Relay control for geofenceSwitch (v0.6.1): a pure status switch —
+        on/off/toggle just set the native onOffState. HomeKit's leave/arrive
+        automations land here via HomeKitLink-Siri."""
+        if dev.deviceTypeId != "geofenceSwitch":
             return
-        if bool(getattr(orig_dev, "onState", None)) == bool(getattr(new_dev, "onState", None)):
-            return                              # not an on/off transition
-        for client_id in list(watchers):
-            try:
-                self._update_client(indigo.devices[client_id])
-            except Exception as err:
-                self.logger.debug(f"geofence fast-path update ({client_id}): {err}")
+        if action.deviceAction == indigo.kDeviceAction.TurnOn:
+            new_state = True
+        elif action.deviceAction == indigo.kDeviceAction.TurnOff:
+            new_state = False
+        elif action.deviceAction == indigo.kDeviceAction.Toggle:
+            new_state = not bool(dev.onState)
+        else:
+            return   # RequestStatus etc. — nothing to ask; state is the truth
+        dev.updateStateOnServer("onOffState", new_state)
+        dev.updateStateImageOnServer(indigo.kStateImageSel.PowerOn if new_state
+                                     else indigo.kStateImageSel.PowerOff)
+        self.logger.info(f"{dev.name}: {'ON (inside home zone)' if new_state else 'OFF (left home zone)'}")
 
     def _geo_home_for(self, device):
         """True/False from the paired geofence switch; None when not
@@ -349,16 +381,18 @@ class Plugin(indigo.PluginBase):
         """ConfigUI menu: on/off-capable devices that could act as a geofence
         switch — virtuals first (the expected case), then everything else."""
         items = [("0", "- none (Wi-Fi only) -")]
-        virtuals, others = [], []
+        own_switches, others = [], []
         for dev in indigo.devices:
             if dev.pluginId == self.pluginId:
+                # our own Geofence Switch type is the expected choice; every
+                # other own-plugin type (clients/APs) must never be pairable.
+                if dev.deviceTypeId == "geofenceSwitch":
+                    own_switches.append((str(dev.id), dev.name))
                 continue
             if getattr(dev, "onState", None) is None:
                 continue
-            entry = (str(dev.id), dev.name)
-            (virtuals if dev.pluginId == "com.perceptiveautomation.indigoplugin.devicecollection"
-             else others).append(entry)
-        items += sorted(virtuals, key=lambda x: x[1].lower())
+            others.append((str(dev.id), dev.name))
+        items += sorted(own_switches, key=lambda x: x[1].lower())
         items += sorted(others, key=lambda x: x[1].lower())
         return items
 

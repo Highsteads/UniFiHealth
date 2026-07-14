@@ -154,6 +154,21 @@
     <!-- UniFi Client — opt-in, for the devices you care about          -->
     <!-- (e.g. the Shelly plugs). Presence + signal/satisfaction.       -->
     <!-- ============================================================= -->
+    <!-- Geofence Switch (v0.6.1): a plain status switch for phone geofences.
+         Expose it to Apple Home (HomeKitLink-Siri etc.) and let the phone's
+         "when I leave/arrive home" automations flip it — ON = inside the home
+         zone. It performs no action of its own; it just holds the state the
+         presence fusion reads. NB type="relay" → native onOffState (do NOT
+         declare it) and actionControlDevice is implemented in plugin.py. -->
+    <Device id="geofenceSwitch" type="relay">
+        <Name>Geofence Switch</Name>
+        <ConfigUI>
+            <Field id="hlp" type="label" fontSize="small">
+                <Label>A pure status switch — flip it from Apple Home ("when I leave/arrive home" automations via HomeKitLink-Siri), then pair it in a UniFi WiFi Client's "Geofence switch" setting. ON = inside the home zone. No other configuration needed.</Label>
+            </Field>
+        </ConfigUI>
+    </Device>
+
     <Device id="unifiClient" type="sensor">
         <Name>UniFi WiFi Client</Name>
         <ConfigUI>
