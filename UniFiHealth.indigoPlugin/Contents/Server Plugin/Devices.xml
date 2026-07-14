@@ -169,6 +169,13 @@
                 <Label>Client:</Label>
                 <List class="self" method="get_client_list" dynamicReload="true"/>
             </Field>
+            <Field id="geofence_device" type="menu" defaultValue="0" tooltip="Optional: an on/off device flipped by this phone's HomeKit leave/arrive automations (ON = inside the home zone). Fuses with Wi-Fi: home when either witness says home, and away the moment the geofence says gone — no 10-minute wait.">
+                <Label>Geofence switch (optional):</Label>
+                <List class="self" method="get_geofence_device_list" dynamicReload="true"/>
+            </Field>
+            <Field id="hlpGeo" type="label" fontSize="mini" alignWithControl="true">
+                <Label>Pair a virtual switch driven by the phone's HomeKit 'when I leave/arrive home' automations (exposed via HomeKitLink-Siri). Leave as none for Wi-Fi-only presence.</Label>
+            </Field>
         </ConfigUI>
         <States>
             <State id="clientSummary"><ValueType>String</ValueType><TriggerLabel>Summary</TriggerLabel><ControlPageLabel>Summary</ControlPageLabel></State>
@@ -186,6 +193,9 @@
             <State id="minutesSinceSeen"><ValueType>Integer</ValueType><TriggerLabel>Minutes Since Seen</TriggerLabel><ControlPageLabel>Minutes Since Seen</ControlPageLabel></State>
             <State id="lastSeenEpoch"><ValueType>Integer</ValueType><TriggerLabel>Last Seen (epoch)</TriggerLabel><ControlPageLabel>Last Seen (epoch)</ControlPageLabel></State>
             <State id="presenceChangedUi"><ValueType>String</ValueType><TriggerLabel>Presence Changed At</TriggerLabel><ControlPageLabel>Presence Changed At</ControlPageLabel></State>
+            <!-- Geofence fusion (v0.6.0): which witness produced the verdict —
+                 wifi / geofence / wifi+geofence. -->
+            <State id="presenceSource"><ValueType>String</ValueType><TriggerLabel>Presence Source</TriggerLabel><ControlPageLabel>Presence Source</ControlPageLabel></State>
         </States>
         <UiDisplayStateId>clientSummary</UiDisplayStateId>
     </Device>

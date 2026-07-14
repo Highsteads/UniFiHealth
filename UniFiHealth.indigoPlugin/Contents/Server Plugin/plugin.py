@@ -6,8 +6,17 @@
 #              actions for AP restart / locate.
 # Author:      CliveS & Claude Opus 4.8
 # Date:        29-06-2026
-# Version:     0.5.1
+# Version:     0.6.0
 #
+# v0.6.0: GEOFENCE FUSION — a unifiClient may pair an optional on/off device
+#         (a virtual switch flipped by the phone's HomeKit leave/arrive
+#         automations via HomeKitLink-Siri; ON = inside the home zone).
+#         Verdict comes from presence_fusion.fused_presence: home when EITHER
+#         witness says home; away the moment the geofence says gone AND the
+#         phone isn't on Wi-Fi (no 10-minute wait). subscribeToChanges +
+#         deviceUpdated (own-plugin loop guard) applies a geofence flip in
+#         seconds. New presenceSource state (wifi/geofence/wifi+geofence);
+#         pure logic in presence_fusion.py with contract tests (test_fusion.py).
 # v0.5.1: AP offline detection is now debounced — onState only flips to Offline
 #         (firing "AP down" automations) after an AP has been continuously
 #         non-connected for apOfflineGraceMinutes (default 3). This rides out
@@ -73,7 +82,9 @@ try:
 except ImportError:
     PUSHOVER_USER_TOKEN = ""
 
-PLUGIN_VERSION = "0.5.1"
+from presence_fusion import fused_presence, presence_source
+
+PLUGIN_VERSION = "0.6.0"
 FOLDER_NAME = "UniFi Health"
 
 
@@ -161,6 +172,10 @@ class Plugin(indigo.PluginBase):
         self.ap_devices = {}       # apDevId -> controllerDevId
         self.client_devices = {}   # clientDevId -> controllerDevId
         self.client_last_seen = {} # clientDevId -> epoch of last sighting
+        # Geofence fusion (v0.6.0): geofenceDevId -> set(clientDevId) so a
+        # HomeKit leave/arrive flip re-evaluates presence within seconds
+        # rather than waiting for the next controller poll.
+        self.geofence_watch = {}
         self.event_triggers = {}   # triggerId -> trigger
         self._alert_times = {}     # alert-key -> last-sent epoch (Pushover debounce)
         self.next_update = 0.0
@@ -169,6 +184,10 @@ class Plugin(indigo.PluginBase):
 
     def startup(self):
         self.logger.info(f"Starting UniFi Health {PLUGIN_VERSION}")
+        # Geofence fusion (v0.6.0): watch for geofence-switch flips so a
+        # HomeKit leave/arrive lands in seconds. deviceUpdated has the
+        # mandatory own-plugin loop guard.
+        indigo.devices.subscribeToChanges()
         folder_id = self._ensure_folder()
         if folder_id:
             for dev in indigo.devices.iter("self"):
@@ -265,6 +284,12 @@ class Plugin(indigo.PluginBase):
                 self.client_last_seen[device.id] = float(seen)
             if "presence" in device.states and not device.states.get("presence"):
                 device.updateStateOnServer("presence", "away")
+            # Geofence fusion (v0.6.0): map the optional geofence switch to
+            # this client so deviceUpdated can react to a flip immediately.
+            geo_id = _as_int(device.pluginProps.get("geofence_device"), 0)
+            if geo_id:
+                self.geofence_watch.setdefault(geo_id, set()).add(device.id)
+                self.logger.info(f"{device.name}: geofence fusion active (device {geo_id})")
             self.next_update = 0.0
 
     def deviceStopComm(self, device):
@@ -277,12 +302,65 @@ class Plugin(indigo.PluginBase):
             self.ap_devices.pop(device.id, None)
         elif device.deviceTypeId == "unifiClient":
             self.client_devices.pop(device.id, None)
+            for watchers in self.geofence_watch.values():
+                watchers.discard(device.id)
 
     @staticmethod
     def didDeviceCommPropertyChange(orig_dev, new_dev):
-        # Restart comm only when the controller binding or target MAC changes.
-        keys = ("address", "port", "username", "password", "unifi_controller")
+        # Restart comm only when the controller binding, target MAC or
+        # geofence pairing changes.
+        keys = ("address", "port", "username", "password", "unifi_controller",
+                "geofence_device")
         return any(orig_dev.pluginProps.get(k) != new_dev.pluginProps.get(k) for k in keys)
+
+    # ── Geofence fusion (v0.6.0) ───────────────────────────────────────────
+    # A geofence switch is any Indigo on/off device flipped by the phone's
+    # HomeKit leave/arrive automations (via HomeKitLink-Siri). ON = inside
+    # the home zone. We subscribe to device changes so a flip re-evaluates
+    # presence within seconds instead of waiting for the next poll.
+
+    def deviceUpdated(self, orig_dev, new_dev):
+        super().deviceUpdated(orig_dev, new_dev)
+        if new_dev.pluginId == self.pluginId:   # loop guard — ignore own devices
+            return
+        watchers = self.geofence_watch.get(new_dev.id)
+        if not watchers:
+            return
+        if bool(getattr(orig_dev, "onState", None)) == bool(getattr(new_dev, "onState", None)):
+            return                              # not an on/off transition
+        for client_id in list(watchers):
+            try:
+                self._update_client(indigo.devices[client_id])
+            except Exception as err:
+                self.logger.debug(f"geofence fast-path update ({client_id}): {err}")
+
+    def _geo_home_for(self, device):
+        """True/False from the paired geofence switch; None when not
+        configured or unreadable (fusion then degrades to Wi-Fi-only)."""
+        geo_id = _as_int(device.pluginProps.get("geofence_device"), 0)
+        if not geo_id:
+            return None
+        try:
+            return bool(indigo.devices[geo_id].onState)
+        except Exception:
+            return None
+
+    def get_geofence_device_list(self, filter="", valuesDict=None, typeId="", targetId=0):
+        """ConfigUI menu: on/off-capable devices that could act as a geofence
+        switch — virtuals first (the expected case), then everything else."""
+        items = [("0", "- none (Wi-Fi only) -")]
+        virtuals, others = [], []
+        for dev in indigo.devices:
+            if dev.pluginId == self.pluginId:
+                continue
+            if getattr(dev, "onState", None) is None:
+                continue
+            entry = (str(dev.id), dev.name)
+            (virtuals if dev.pluginId == "com.perceptiveautomation.indigoplugin.devicecollection"
+             else others).append(entry)
+        items += sorted(virtuals, key=lambda x: x[1].lower())
+        items += sorted(others, key=lambda x: x[1].lower())
+        return items
 
     def validateDeviceConfigUi(self, valuesDict, typeId, devId):
         """Block saving a Controller until it has host + username + password,
@@ -775,23 +853,35 @@ class Plugin(indigo.PluginBase):
             return
         now = self._now()
         data = cache["clients_by_mac"].get(device.address)
+        geo_home = self._geo_home_for(device)
         if not data:
-            # Not on the network right now. Presence is patient: stay home
-            # until away_minutes of silence (phones nap off WiFi constantly).
+            # Not on the network right now. Wi-Fi-only presence is patient
+            # (phones nap off WiFi constantly); with a geofence paired the
+            # verdict comes from the fusion table instead — away lands
+            # immediately when the geofence agrees, and a napping phone
+            # stays home for as long as the geofence vouches for it.
             last_seen = self.client_last_seen.get(device.id, 0.0)
             minutes = int((now - last_seen) / 60) if last_seen else 9999
+            verdict = fused_presence(False, minutes, self.away_minutes, geo_home)
+            source = presence_source(False, geo_home)
+            if verdict == "away":
+                summary = f"AWAY {minutes}m"
+            elif geo_home:
+                summary = f"HOME (geofence · offline {minutes}m)"
+            else:
+                summary = f"HOME (offline {minutes}m)"
             device.updateStatesOnServer([
                 {"key": "onOffState", "value": False},
                 {"key": "minutesSinceSeen", "value": min(minutes, 99999)},
                 {"key": "offlineSeconds", "value": min(int(now - last_seen) if last_seen else 0, 9999999)},
-                {"key": "clientSummary",
-                 "value": (f"AWAY {minutes}m" if minutes >= self.away_minutes
-                           else f"HOME (offline {minutes}m)")},
+                {"key": "presenceSource", "value": source},
+                {"key": "clientSummary", "value": summary},
             ])
-            if minutes >= self.away_minutes:
+            if verdict == "away":
                 self._set_presence(device, "away")
                 device.updateStateImageOnServer(indigo.kStateImageSel.SensorOff)
             else:
+                self._set_presence(device, "home")
                 device.updateStateImageOnServer(indigo.kStateImageSel.SensorTripped)
             return
 
@@ -815,6 +905,7 @@ class Plugin(indigo.PluginBase):
             {"key": "offlineSeconds", "value": 0},
             {"key": "minutesSinceSeen", "value": 0},
             {"key": "lastSeenEpoch", "value": int(now)},
+            {"key": "presenceSource", "value": presence_source(True, geo_home)},
             {"key": "clientSummary", "value": f"HOME · {signal}dBm sat={sat} @ {ap_name}"},
         ]
         device.updateStatesOnServer(states)

@@ -67,7 +67,22 @@ a channel, a band over its utilisation threshold.*
   private (randomised) WiFi address per network — fine for tracking as long as
   "Rotate WiFi Address" stays off for your home network in iOS settings, but if iOS
   rotates the address the device will look like it never came back. Track by the
-  address your controller actually shows for the phone.
+  address your controller actually shows for the phone (or set the phone's Private
+  Wi-Fi Address to Off for your home network and track the hardware address).
+- **Geofence fusion (v0.6.0)** — WiFi alone can only notice an *absence*, which is why
+  `away` waits out the quiet period. A WiFi Client device can now pair an optional
+  **geofence switch**: any on/off Indigo device flipped by the phone's own location —
+  the natural fit is a virtual device exposed to Apple Home (e.g. via HomeKitLink-Siri)
+  with two Home-app automations, *when I leave home → off* and *when I arrive → on*.
+  The two witnesses then fuse: **home when either says home** (a phone napping off
+  WiFi stays home while the geofence vouches for it, and a GPS wobble can't fake
+  `away` while the phone is demonstrably on your WiFi), and **away the moment the
+  geofence says gone** and the phone isn't associated — seconds, not the 10-minute
+  wait. The plugin reacts to the switch flip immediately (no waiting for the next
+  poll), a new `presenceSource` state says which witness produced the verdict
+  (`wifi` / `geofence` / `wifi+geofence`), and with no switch paired the behaviour
+  is exactly the WiFi-only logic above. The decision table lives in
+  `presence_fusion.py` with contract tests in `test_fusion.py`.
 
 ## Credentials
 
