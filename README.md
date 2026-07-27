@@ -15,7 +15,7 @@ focus on **presence and online/offline** status. UniFi Health adds the layer the
 don't: per-AP channel / width / TX-power / **utilisation** / **satisfaction**,
 reboot detection, and a best-practice **audit** so you can see at a glance where the
 problem is — e.g. *2.4 GHz running at 40 MHz width, TX power on High, four APs sharing
-a channel, a band over its utilisation threshold.*
+a channel, 2.4 GHz over its utilisation threshold.*
 
 ## Device types
 
