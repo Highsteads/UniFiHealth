@@ -22,8 +22,9 @@ a channel, a band over its utilisation threshold.*
 | Device | What it gives you |
 | --- | --- |
 | **UniFi Controller** | Connection status, version, AP/client counts, WLAN health, worst-AP utilisation, worst-client satisfaction, total audit issues. **Plus (v0.5.0):** Internet/WAN health — the controller's own ISP speedtest (down/up Mbps + when it last ran), internet latency, drops and public WAN IP, and the gateway's CPU/memory; client roll-ups — wired vs wireless, the Wi-Fi-generation mix (Wi-Fi 7/6/5/4/legacy) and a count of slow legacy a/b/g clients, plus the least-happy clients by satisfaction; a count of APs with firmware updates pending; and the RF neighbourhood — how many neighbouring networks are visible and how they're spread across the 2.4 GHz channels. |
-| **UniFi Access Point** | Per band (2.4/5/6 GHz): channel, width, TX power, utilisation, satisfaction, client count; uptime + reboot detection; uplink type; and an **audit** (`configOK` + `auditFlags`). Auto-discovered — including Wi-Fi consoles such as the **UDR / UDM** that broadcast their own Wi-Fi. **Plus (v0.5.0):** firmware version + an update-available flag, CPU/memory/load, the wired uplink speed against what the AP is capable of (so a 2.5 GbE AP stuck at 1 Gb is flagged) with the switch and port it's plugged into, live throughput, and how many neighbouring networks share its 2.4 GHz channel. |
+| **UniFi Access Point** | Per band (2.4/5/6 GHz): channel, width, utilisation and client count — plus TX power and satisfaction on 2.4 and 5 GHz only. Uptime + reboot detection, uplink type, and an **audit** (`configOK` + `auditFlags`). Auto-discovered — including Wi-Fi consoles such as the **UDR / UDM** that broadcast their own Wi-Fi. **Plus (v0.5.0):** firmware version + an update-available flag, CPU/memory/load, the wired uplink speed against what the AP is capable of (so a 2.5 GbE AP stuck at 1 Gb is flagged) with the switch and port it's plugged into, live throughput, and how many neighbouring networks share its 2.4 GHz channel. |
 | **UniFi WiFi Client** | Opt-in, for the devices you care about (e.g. smart plugs): signal, satisfaction, connected AP, SSID, vendor, online/offline. As of **v0.3.0** every tracked client also gets **presence** — a debounced `home`/`away` state designed for phones. |
+| **Geofence Switch** (v0.6.1) | A plain on/off switch with nothing to configure. On means inside the home zone. Flip it from Apple Home — via HomeKitLink-Siri, with *when I leave* and *when I arrive* automations — then name it in a WiFi Client's **Geofence switch** setting, and the client fuses the two witnesses. Create one per phone you track. |
 
 ## Features
 
@@ -38,9 +39,10 @@ a channel, a band over its utilisation threshold.*
 - **Cause-level Pushover alerts** (opt-in) — pages you *once* with the actual cause
   (an AP reboot, or the controller going unreachable) instead of the flood of
   "device offline" alerts the dropped clients would otherwise generate.
-- **Config audit** — flags 2.4 GHz at 40 MHz width, TX power = High, min-RSSI off,
-  channel over-subscription, and bands over a utilisation threshold. Run on demand
-  from the plugin menu, or read it off the device states.
+- **Config audit** — on 2.4 GHz it flags 40 MHz width, TX power = High, min-RSSI
+  off, a channel shared by more than two APs, and utilisation over your threshold.
+  On 5 GHz it flags TX power = High. 6 GHz isn't audited. Run it on demand from the
+  plugin menu, or read the result off the device states.
 - **Internet, hardware & RF insight (v0.5.0)** — surfaces a lot of what the controller
   already knows but never used to leave the controller: your ISP speedtest result and
   internet latency, which APs need firmware, an AP whose 2.5 GbE uplink has negotiated
@@ -69,11 +71,13 @@ a channel, a band over its utilisation threshold.*
   rotates the address the device will look like it never came back. Track by the
   address your controller actually shows for the phone (or set the phone's Private
   Wi-Fi Address to Off for your home network and track the hardware address).
-- **Geofence fusion (v0.6.0)** — WiFi alone can only notice an *absence*, which is why
-  `away` waits out the quiet period. A WiFi Client device can now pair an optional
-  **geofence switch**: any on/off Indigo device flipped by the phone's own location —
-  the natural fit is a virtual device exposed to Apple Home (e.g. via HomeKitLink-Siri)
-  with two Home-app automations, *when I leave home → off* and *when I arrive → on*.
+- **Geofence fusion (v0.6.0, v0.6.1)** — WiFi alone can only notice an *absence*,
+  which is why `away` waits out the quiet period. A WiFi Client device can pair an
+  optional **geofence switch** — a switch flipped by the phone's own location.
+  Since v0.6.1 the plugin ships its own **Geofence Switch** device type for the job:
+  add one, expose it to Apple Home (e.g. via HomeKitLink-Siri), and build the two
+  Home-app automations, *when I leave home → off* and *when I arrive → on*. Any
+  other on/off Indigo device still works if you already have one you'd rather use.
   The two witnesses then fuse: **home when either says home** (a phone napping off
   WiFi stays home while the geofence vouches for it, and a GPS wobble can't fake
   `away` while the phone is demonstrably on your WiFi), and **away the moment the
@@ -83,6 +87,15 @@ a channel, a band over its utilisation threshold.*
   (`wifi` / `geofence` / `wifi+geofence`), and with no switch paired the behaviour
   is exactly the WiFi-only logic above. The decision table lives in
   `presence_fusion.py` with contract tests in `test_fusion.py`.
+- **A bad poll no longer stops the plugin (v0.6.2)** — a controller that answered
+  slowly could let a timeout escape the poll and kill the loop, so the plugin went
+  quiet without saying why. The whole cycle is wrapped now: one failure warns and
+  skips that cycle, a continuing outage stays quiet at debug level rather than
+  filling the log, and recovery reports how many cycles were missed.
+- **Cleaner logs (v0.6.3)** — the shared `plugin_utils.py` moved to v1.3, which
+  stops the `[HH:MM:SS.mmm]` stamp being added twice if the filter is installed
+  more than once, and keeps a malformed log call's arguments visible instead of
+  dropping them.
 
 ## Credentials
 
