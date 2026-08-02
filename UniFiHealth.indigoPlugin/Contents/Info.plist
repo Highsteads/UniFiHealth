@@ -6,12 +6,19 @@
 	<string>UniFi Health</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.clives.indigoplugin.unifihealth</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>https://github.com/Highsteads/UniFiHealth</string>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>1.0.0</string>
 	<key>IwsApiVersion</key>
 	<string>1.0.0</string>
 	<key>PluginVersion</key>
-	<string>0.6.3</string>
+	<string>0.6.4</string>
 	<key>ServerApiVersion</key>
 	<string>3.0</string>
 </dict>

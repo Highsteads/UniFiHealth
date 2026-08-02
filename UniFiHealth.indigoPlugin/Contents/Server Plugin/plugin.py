@@ -6,7 +6,7 @@
 #              actions for AP restart / locate.
 # Author:      CliveS & Claude Opus 4.8
 # Date:        21-07-2026
-# Version:     0.6.3
+# Version:     0.6.4
 #
 # v0.6.3 (21-07-2026): shared plugin_utils.py refreshed to v1.3 — the
 # estate-wide propagation of the four Appliance Monitor deep-review fixes.
@@ -110,7 +110,7 @@ except ImportError:
 
 from presence_fusion import fused_presence, presence_source
 
-PLUGIN_VERSION = "0.6.3"
+PLUGIN_VERSION = "0.6.4"
 FOLDER_NAME = "UniFi Health"
 
 
