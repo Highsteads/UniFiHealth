@@ -6,7 +6,7 @@
 #              actions for AP restart / locate.
 # Author:      CliveS & Claude Opus 4.8
 # Date:        21-07-2026
-# Version:     0.6.4
+# Version:     0.7.0
 #
 # v0.6.3 (21-07-2026): shared plugin_utils.py refreshed to v1.3 — the
 # estate-wide propagation of the four Appliance Monitor deep-review fixes.
@@ -110,7 +110,7 @@ except ImportError:
 
 from presence_fusion import fused_presence, presence_source
 
-PLUGIN_VERSION = "0.6.4"
+PLUGIN_VERSION = "0.7.0"
 FOLDER_NAME = "UniFi Health"
 
 
@@ -171,6 +171,42 @@ def secs_to_ui(seconds):
     h, rem = divmod(rem, 3600)
     m, _ = divmod(rem, 60)
     return f"{d}d {h:02}:{m:02}"
+
+
+
+# UniFi's `model` field is a short internal code, and several of them are
+# actively misleading: **U7LT is the UAP-AC-Lite**, not a WiFi 7 anything. The
+# "U7" there is an old chipset-generation prefix from the AC era and has nothing
+# to do with WiFi 7. Reading the raw code cost a wrong call on 28-08-2026, when
+# the Garage AP — correctly NAMED UAP-AC-Lite — was reported as a U7LT and the
+# name written off as a leftover. It was the code that was misleading.
+# Unknown codes fall through unchanged rather than being guessed at.
+_AP_MODEL_NAMES = {
+    "U7LT":    "UAP-AC-Lite",
+    "U7LR":    "UAP-AC-LR",
+    "U7PG2":   "UAP-AC-Pro",
+    "U7NHD":   "UAP-nanoHD",
+    "UALR6":   "U6-LR",
+    "UALR6v2": "U6-LR (v2)",
+    "UAL6":    "U6-Lite",
+    "U6M":     "U6-Mesh",
+    "U7PRO":   "U7 Pro",
+    "U7PW":    "U7 Pro Wall",
+    "UAPA6A5": "U7 In-Wall",
+    "UDR":     "Dream Router",
+    "UDM":     "Dream Machine",
+    "UDMPRO":  "Dream Machine Pro",
+}
+
+
+def ap_model_name(code):
+    """Human name for a UniFi model code, or the code itself if unrecognised.
+
+    Never guesses. An unknown code is returned verbatim so it is obvious it
+    needs adding, rather than being quietly rendered as something plausible.
+    """
+    code = str(code or "").strip()
+    return _AP_MODEL_NAMES.get(code, code)
 
 
 class Plugin(indigo.PluginBase):
@@ -799,7 +835,10 @@ class Plugin(indigo.PluginBase):
 
         states = []
         states.append({"key": "onOffState", "value": True})
-        states.append({"key": "apModel", "value": data.get("model", "")})
+        _mcode = data.get("model", "")
+        states.append({"key": "apModel", "value": ap_model_name(_mcode),
+                       "uiValue": ap_model_name(_mcode)})
+        states.append({"key": "apModelCode", "value": _mcode})
         uptime = data.get("uptime", 0)
         states.append({"key": "uptimeSeconds", "value": uptime})
         states.append({"key": "uplinkType", "value": (data.get("uplink") or {}).get("type", "")})
@@ -1131,6 +1170,120 @@ class Plugin(indigo.PluginBase):
                     self.logger.warning(f"  {name}: {', '.join(flags)}")
                 else:
                     self.logger.info(f"  {name}: OK")
+        return True
+
+    # ── config WRITE menu actions (v0.7.0) ─────────────────────────────────
+
+    def _each_controller(self):
+        """Yield (indigo controller device, live UniFiSession) for each one."""
+        for dev_id in list(self.controllers):
+            try:
+                dev = indigo.devices[dev_id]
+            except Exception:
+                continue
+            try:
+                yield dev, self._session_for(dev)
+            except Exception as err:
+                self.logger.error(f"{dev.name}: cannot reach the controller — {err}")
+
+    def menu_preview_min_rssi(self, valuesDict=None, typeId=None):
+        """Show what setting a min-RSSI would do, WITHOUT sending anything.
+
+        Exists because min-RSSI KICKS clients rather than steering them, and the
+        cost of that is invisible until it happens. On 29-08-2026 a proposed -60
+        would have disconnected eight clients here, the Sigenergy inverter and a
+        Zigbee repeater among them. Nobody should apply this setting without
+        first seeing that list.
+        """
+        try:
+            target = int(str((valuesDict or {}).get("minRssi", "-70")).strip())
+        except (TypeError, ValueError):
+            self.logger.error("Minimum RSSI must be a number, e.g. -70")
+            return False
+        if target > 0:
+            target = -target
+        band = str((valuesDict or {}).get("band", "ng"))
+
+        self.logger.info(f"===== Minimum RSSI preview: {band} at {target} dBm =====")
+        total = 0
+        for dev, session in self._each_controller():
+            try:
+                aps = {str(d.get("mac", "")).lower(): d for d in session.get_devices()}
+                clients = session.get_clients()
+            except Exception as err:
+                self.logger.error(f"{dev.name}: {err}")
+                continue
+            casualties = []
+            for c in clients:
+                if c.get("is_wired") or (c.get("radio") or "") != band:
+                    continue
+                try:
+                    sig = int(c.get("rssi_dbm") or c.get("signal") or 0)
+                except (TypeError, ValueError):
+                    continue
+                if sig <= target:
+                    ap = aps.get(str(c.get("ap_mac", "")).lower(), {}).get("name", "?")
+                    casualties.append((sig, c.get("name") or c.get("hostname") or c.get("mac"), ap))
+            total += len(casualties)
+            for sig, name, ap in sorted(casualties):
+                self.logger.warning(f"    WOULD DISCONNECT  {sig:>4} dBm  {name}  (on {ap})")
+        if total == 0:
+            self.logger.info(f"    nothing currently sits at or below {target} dBm — safe to apply")
+        else:
+            self.logger.warning(f"    {total} client(s) would be disconnected at {target} dBm")
+        self.logger.info("===== preview only — nothing was changed =====")
+        return True
+
+    def menu_apply_min_rssi(self, valuesDict=None, typeId=None):
+        """Apply a min-RSSI to every AP radio on the chosen band.
+
+        Read-modify-write per AP, and each write is read back before it is
+        called a success — a 200 from the controller means the document was
+        accepted, not that the field was stored.
+        """
+        try:
+            target = int(str((valuesDict or {}).get("minRssi", "-70")).strip())
+        except (TypeError, ValueError):
+            self.logger.error("Minimum RSSI must be a number, e.g. -70")
+            return False
+        if target > 0:
+            target = -target
+        band    = str((valuesDict or {}).get("band", "ng"))
+        enable  = bool((valuesDict or {}).get("enable", True))
+        dry     = bool((valuesDict or {}).get("dryRun", False))
+
+        self.logger.info(f"===== Minimum RSSI {'DRY RUN' if dry else 'APPLY'}: "
+                         f"{band} -> {target} dBm, enabled={enable} =====")
+        ok_n = skip_n = fail_n = 0
+        for dev, session in self._each_controller():
+            try:
+                devices = session.get_devices()
+            except Exception as err:
+                self.logger.error(f"{dev.name}: {err}")
+                continue
+            for d in devices:
+                if d.get("type") not in ("uap", "udm"):
+                    continue
+                if not any((r.get("radio") == band) for r in (d.get("radio_table") or [])):
+                    continue
+                name = d.get("name") or d.get("mac")
+                try:
+                    ok, msg = session.set_radio_min_rssi(d.get("_id"), band, target,
+                                                         enabled=enable, dry_run=dry)
+                except Exception as err:
+                    ok, msg = False, str(err)
+                if ok and "nothing sent" in msg:
+                    skip_n += 1
+                    self.logger.info(f"    {name}: {msg}")
+                elif ok:
+                    ok_n += 1
+                    self.logger.info(f"    {name}: {msg}")
+                else:
+                    fail_n += 1
+                    self.logger.error(f"    {name}: {msg}")
+        self.logger.info(f"===== {ok_n} changed, {skip_n} already correct, {fail_n} failed =====")
+        if fail_n:
+            self.logger.error("Some APs did not take the setting — see the lines above.")
         return True
 
     def testConnection(self, valuesDict=None, typeId=None):

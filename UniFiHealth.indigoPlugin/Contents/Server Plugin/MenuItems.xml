@@ -11,6 +11,55 @@
         <CallbackMethod>menu_run_audit</CallbackMethod>
     </MenuItem>
 
+    <MenuItem id="sep_config" isSeparator="true"/>
+    <MenuItem id="previewMinRssi">
+        <Name>Preview Minimum RSSI...</Name>
+        <CallbackMethod>menu_preview_min_rssi</CallbackMethod>
+        <ConfigUI>
+            <Field id="warn" type="label" fontSize="small">
+                <Label>Minimum RSSI DISCONNECTS clients below the threshold. It does not steer them to a nearer AP — if the AP kicking them is already the closest one, they have nowhere to go and will reconnect and be kicked again. Always preview before applying.</Label>
+            </Field>
+            <Field id="band" type="menu" defaultValue="ng">
+                <Label>Band:</Label>
+                <List>
+                    <Option value="ng">2.4 GHz</Option>
+                    <Option value="na">5 GHz</Option>
+                    <Option value="6e">6 GHz</Option>
+                </List>
+            </Field>
+            <Field id="minRssi" type="textfield" defaultValue="-70">
+                <Label>Minimum RSSI (dBm):</Label>
+            </Field>
+        </ConfigUI>
+    </MenuItem>
+    <MenuItem id="applyMinRssi">
+        <Name>Apply Minimum RSSI...</Name>
+        <CallbackMethod>menu_apply_min_rssi</CallbackMethod>
+        <ConfigUI>
+            <Field id="warn2" type="label" fontSize="small">
+                <Label>Writes to the controller. Every AP is read, edited and read back again, so a setting the controller silently ignores is reported as a failure rather than a success. Run the preview first.</Label>
+            </Field>
+            <Field id="band" type="menu" defaultValue="ng">
+                <Label>Band:</Label>
+                <List>
+                    <Option value="ng">2.4 GHz</Option>
+                    <Option value="na">5 GHz</Option>
+                    <Option value="6e">6 GHz</Option>
+                </List>
+            </Field>
+            <Field id="minRssi" type="textfield" defaultValue="-70">
+                <Label>Minimum RSSI (dBm):</Label>
+            </Field>
+            <Field id="enable" type="checkbox" defaultValue="true">
+                <Label>Enable the threshold</Label>
+                <Description>Untick to store the value but switch min-RSSI off</Description>
+            </Field>
+            <Field id="dryRun" type="checkbox" defaultValue="false">
+                <Label>Dry run</Label>
+                <Description>Report what would change and send nothing</Description>
+            </Field>
+        </ConfigUI>
+    </MenuItem>
     <MenuItem id="sep_diag" isSeparator="true"/>
 
     <MenuItem id="testConnection">

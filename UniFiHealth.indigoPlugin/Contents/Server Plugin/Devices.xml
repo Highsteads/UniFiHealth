@@ -97,6 +97,7 @@
         <States>
             <State id="apSummary"><ValueType>String</ValueType><TriggerLabel>Summary</TriggerLabel><ControlPageLabel>Summary</ControlPageLabel></State>
             <State id="apModel"><ValueType>String</ValueType><TriggerLabel>Model</TriggerLabel><ControlPageLabel>Model</ControlPageLabel></State>
+            <State id="apModelCode"><ValueType>String</ValueType><TriggerLabel>Model code (raw UniFi)</TriggerLabel><ControlPageLabel>Model code (raw UniFi)</ControlPageLabel></State>
             <State id="uptimeSeconds"><ValueType>Integer</ValueType><TriggerLabel>Uptime (s)</TriggerLabel><ControlPageLabel>Uptime (s)</ControlPageLabel></State>
             <State id="rebooted"><ValueType>Boolean</ValueType><TriggerLabel>Recently Rebooted</TriggerLabel><ControlPageLabel>Recently Rebooted</ControlPageLabel></State>
             <State id="uplinkType"><ValueType>String</ValueType><TriggerLabel>Uplink Type (wire/wireless)</TriggerLabel><ControlPageLabel>Uplink Type</ControlPageLabel></State>

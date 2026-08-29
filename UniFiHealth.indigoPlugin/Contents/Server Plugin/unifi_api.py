@@ -161,6 +161,194 @@ class UniFiSession:
             return False, f"command '{cmd}' -> HTTP {r.status_code}"
         return True, "ok"
 
+    # ── config WRITE (rest/device) ─────────────────────────────────────────
+    # Added 29-08-2026. Everything above this line is read-only; everything
+    # below can change the controller's stored configuration, so it is kept
+    # together and every method here reads before it writes.
+
+    def get_device_config(self, device_id, site="default"):
+        """The full stored config document for one device, by its Mongo _id.
+
+        This is the document rest/device PUT edits, and it is NOT the same shape
+        as the stat/device row get_devices() returns — that one is stats plus
+        config merged. Always start an edit from this.
+        """
+        rows = self._get(f"rest/device/{device_id}", site)
+        return rows[0] if rows else {}
+
+    def put_device_config(self, device_id, payload, site="default"):
+        """PUT a partial config document. Returns (ok: bool, message: str).
+
+        DANGER, and the whole reason the helpers below exist: a list-valued key
+        REPLACES the stored list wholesale. Sending a radio_table that holds
+        only the radio you meant to edit DELETES every other radio's settings on
+        that AP. Never hand-build a list for this — read the current document,
+        edit the copy in place, and send the entire list back.
+        """
+        if self.session is None:
+            self.login()
+        url = f"{self.base}{self._prefix}/s/{site}/rest/device/{device_id}"
+        try:
+            r = self.session.put(url, json=payload, timeout=self.timeout)
+            if r.status_code == 401:
+                self._log("session expired (401) on PUT — re-login")
+                self.login()
+                r = self.session.put(url, json=payload, timeout=self.timeout)
+        except Exception as err:
+            return False, f"PUT connection error: {err}"
+        if r.status_code != 200:
+            body = ""
+            try:
+                body = str(r.json().get("meta", {}).get("msg", ""))
+            except Exception:
+                body = r.text[:160]
+            return False, f"PUT -> HTTP {r.status_code} {body}".strip()
+        return True, "ok"
+
+    # ── what min-RSSI actually is on Network 10 (measured 29-08-2026) ──────
+    #
+    # DO NOT reinstate per-radio min_rssi writes without re-testing. On this
+    # controller (Network 10.5.67) they are a dead end, in two separate ways:
+    #
+    #   * `rest/device` — the classic device-config endpoint — is GONE. Every
+    #     shape of it (by _id, by mac, the bare collection) returns
+    #     api.err.NotFound.
+    #   * The older `upd/device/<id>` route still answers **HTTP 200 OK** to a
+    #     radio_table PUT and stores NOTHING. Verified on the Bedroom AP: sent
+    #     min_rssi -70, got 200, read back -80 unchanged. A caller trusting the
+    #     status code would report six APs configured and have changed nothing.
+    #     This is why every write in this module reads back before claiming
+    #     success — a 200 is not evidence.
+    #
+    # The min_rssi / min_rssi_enabled fields still PRESENT in stat/device output
+    # are vestigial. They describe what an older controller once stored.
+    #
+    # Steering now lives per-SSID in `rest/wlanconf`, which does work (PUT
+    # stores and reads back correctly — proven by writing -76 and restoring
+    # -75 on an inert field). But the only bands offered are `na` (5GHz) and
+    # `6e`: **there is no roaming_assistant_ng_*, so 2.4GHz has no min-RSSI at
+    # all on this version.** For a 2.4-only SSID the available levers are
+    # `bss_transition` (802.11v — the AP suggests a better AP instead of
+    # kicking) and `minrate_ng_data_rate_kbps` (a floor that distant clients
+    # cannot hold, which sheds them without a hard disconnect).
+
+    def get_wlans(self, site="default"):
+        """Every WLAN's full config document. This IS editable — see put_wlan."""
+        if self.session is None:
+            self.login()
+        url = f"{self.base}{self._prefix}/s/{site}/rest/wlanconf"
+        r = self.session.get(url, timeout=self.timeout)
+        if r.status_code == 401:
+            self.login()
+            r = self.session.get(url, timeout=self.timeout)
+        if r.status_code != 200:
+            raise UniFiError(f"GET rest/wlanconf -> HTTP {r.status_code}")
+        return r.json().get("data", [])
+
+    def set_wlan_fields(self, wlan_id, fields, site="default", dry_run=False):
+        """Set named fields on one WLAN, verifying each one landed.
+
+        Returns (ok, message). Partial writes are reported as failures naming
+        the fields that did not stick, because the controller returns 200 for a
+        field it chose to ignore just as readily as for one it stored.
+        """
+        if not isinstance(fields, dict) or not fields:
+            return False, "no fields given"
+        current = {w["_id"]: w for w in self.get_wlans(site)}
+        wlan = current.get(wlan_id)
+        if wlan is None:
+            return False, f"WLAN {wlan_id} not found"
+        deltas = {k: v for k, v in fields.items() if wlan.get(k) != v}
+        if not deltas:
+            return True, "already set — nothing sent"
+        if dry_run:
+            return True, "would set " + ", ".join(
+                f"{k}: {wlan.get(k)!r} -> {v!r}" for k, v in sorted(deltas.items()))
+
+        url = f"{self.base}{self._prefix}/s/{site}/rest/wlanconf/{wlan_id}"
+        try:
+            r = self.session.put(url, json=deltas, timeout=self.timeout)
+        except Exception as err:
+            return False, f"PUT connection error: {err}"
+        if r.status_code != 200:
+            return False, f"PUT -> HTTP {r.status_code} {r.text[:120]}"
+
+        after = {w["_id"]: w for w in self.get_wlans(site)}.get(wlan_id) or {}
+        ignored = [k for k, v in deltas.items() if after.get(k) != v]
+        if ignored:
+            return False, ("controller accepted the PUT but did not store: "
+                           + ", ".join(sorted(ignored)))
+        return True, "set " + ", ".join(
+            f"{k}: {wlan.get(k)!r} -> {v!r}" for k, v in sorted(deltas.items()))
+
+    def set_radio_min_rssi(self, device_id, radio, value, enabled=True,
+                           site="default", dry_run=False):
+        """Set min-RSSI on ONE radio of one AP, preserving every other setting.
+
+        `radio` is UniFi's band name: "ng" = 2.4GHz, "na" = 5GHz, "6e" = 6GHz.
+        Returns (ok, message). With dry_run the change is described and nothing
+        is sent, which is how the caller previews a fleet-wide edit.
+
+        min_rssi is stored as a NEGATIVE integer. A positive number here would
+        be accepted by some firmware and silently mean something absurd, so it
+        is normalised and range-checked rather than trusted.
+        """
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            return False, f"min_rssi {value!r} is not a number"
+        if value > 0:
+            value = -value
+        if not (-94 <= value <= -60):
+            return False, f"min_rssi {value} outside the sane range -94..-60"
+
+        if radio == "ng":
+            return False, ("2.4GHz has no min-RSSI on this controller — the field "
+                           "is vestigial and writes are silently ignored. Use "
+                           "bss_transition or minrate_ng_data_rate_kbps instead.")
+        try:
+            doc = self.get_device_config(device_id, site)
+        except UniFiError as err:
+            return False, (f"per-radio config write is unavailable on this controller "
+                           f"({err}). See the note above set_radio_min_rssi.")
+        if not doc:
+            return False, "device config not found"
+        table = doc.get("radio_table")
+        if not isinstance(table, list) or not table:
+            return False, "device has no radio_table (not an AP?)"
+
+        found = None
+        for entry in table:
+            if entry.get("radio") == radio:
+                found = entry
+                break
+        if found is None:
+            return False, f"no {radio} radio on this device"
+
+        was = (found.get("min_rssi_enabled"), found.get("min_rssi"))
+        if was == (bool(enabled), value):
+            return True, f"already {value} ({'on' if enabled else 'off'}) — nothing sent"
+        if dry_run:
+            return True, f"would set {radio} min_rssi {was[1]} -> {value}, enabled {was[0]} -> {bool(enabled)}"
+
+        found["min_rssi_enabled"] = bool(enabled)
+        found["min_rssi"] = value
+        ok, msg = self.put_device_config(device_id, {"radio_table": table}, site)
+        if not ok:
+            return False, msg
+
+        # Read back. A 200 means the controller accepted the document, not that
+        # it stored what we meant — and a silently-ignored field would look
+        # exactly like success.
+        check = self.get_device_config(device_id, site)
+        for entry in (check.get("radio_table") or []):
+            if entry.get("radio") == radio:
+                if entry.get("min_rssi") == value and bool(entry.get("min_rssi_enabled")) == bool(enabled):
+                    return True, f"{radio} min_rssi {was[1]} -> {value}, enabled {was[0]} -> {bool(enabled)}"
+                return False, (f"write not reflected: asked {value}/{enabled}, "
+                               f"controller holds {entry.get('min_rssi')}/{entry.get('min_rssi_enabled')}")
+        return False, "read-back could not find the radio"
+
     def close(self):
         if self.session:
             try:
