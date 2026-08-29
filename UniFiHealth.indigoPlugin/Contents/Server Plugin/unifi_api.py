@@ -213,12 +213,18 @@ class UniFiSession:
     #   * `rest/device` — the classic device-config endpoint — is GONE. Every
     #     shape of it (by _id, by mac, the bare collection) returns
     #     api.err.NotFound.
-    #   * The older `upd/device/<id>` route still answers **HTTP 200 OK** to a
-    #     radio_table PUT and stores NOTHING. Verified on the Bedroom AP: sent
-    #     min_rssi -70, got 200, read back -80 unchanged. A caller trusting the
-    #     status code would report six APs configured and have changed nothing.
-    #     This is why every write in this module reads back before claiming
-    #     success — a 200 is not evidence.
+    #   * The older `upd/device/<id>` route DOES still work for radio_table —
+    #     but only for some fields, which is the trap. Measured on this
+    #     controller: `channel` writes STORE (Living Room In-Wall ng went
+    #     auto -> 11 and read back 11), while `min_rssi` on the same PUT, in the
+    #     same table, through the same route, is SILENTLY DISCARDED (Bedroom AP:
+    #     sent -70, got HTTP 200, read back -80 unchanged).
+    #
+    #     So the rule is not "this endpoint is dead" — it is "min_rssi is a dead
+    #     FIELD and the endpoint will not tell you". A caller trusting the 200
+    #     would report six APs configured having changed nothing. This is why
+    #     every write in this module reads back: a 200 is not evidence, and the
+    #     same request can be half-honoured.
     #
     # The min_rssi / min_rssi_enabled fields still PRESENT in stat/device output
     # are vestigial. They describe what an older controller once stored.
