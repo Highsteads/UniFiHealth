@@ -29,7 +29,9 @@
     </Field>
     <Field id="autoRemoveAPs" type="checkbox" defaultValue="true">
         <Label>Auto-remove AP devices:</Label>
-        <Description>Delete the Indigo device when its access point is forgotten by the controller. An AP still used by a trigger, schedule or control page is kept and flagged, never deleted.</Description>
+    </Field>
+    <Field id="label_autoRemoveAPs_info" type="label">
+        <Label>Delete the Indigo device when its access point is forgotten by the controller. An AP still used by a trigger, schedule or control page is kept and flagged, never deleted.</Label>
     </Field>
     <Field id="apOfflineGraceMinutes" type="textfield" defaultValue="3" tooltip="Minutes an AP must be continuously off the controller before it's marked Offline. Rides out reboots / firmware upgrades so they don't fire 'AP down' alerts; a real outage still alerts after this long. 0 = mark offline immediately.">
         <Label>AP offline grace (minutes):</Label>

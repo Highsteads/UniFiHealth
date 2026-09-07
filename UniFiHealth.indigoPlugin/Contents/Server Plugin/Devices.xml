@@ -31,7 +31,9 @@
             <Field id="sep_escape" type="separator"/>
             <Field id="configure_later" type="checkbox" defaultValue="false">
                 <Label>Save without configuring:</Label>
-                <Description>Tick to save and exit now (the controller stays idle until credentials are added). Or click Cancel to discard without saving.</Description>
+            </Field>
+            <Field id="label_configure_later_info" type="label">
+                <Label>Tick to save and exit now (the controller stays idle until credentials are added). Or click Cancel to discard without saving.</Label>
             </Field>
         </ConfigUI>
         <States>
