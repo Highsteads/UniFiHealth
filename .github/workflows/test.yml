@@ -20,21 +20,16 @@ jobs:
           python-version: "3.13"   # matches Indigo 2025.2's embedded Python
       - name: Syntax check
         run: python -m compileall -q "UniFiHealth.indigoPlugin/Contents/Server Plugin"
-      # This job has been named "tests" since it was created and until 08-09-2026 it
-      # ran none — only compileall and ruff, while 17 tests sat in the bundle
-      # never running on a push. The suite needs no third-party packages and no
-      # Indigo: it stubs `indigo` at import.
-      - name: Unit tests
-        working-directory: "UniFiHealth.indigoPlugin/Contents/Server Plugin"
-        run: python -m unittest discover -p "test_*.py" -q
-      # The version-consistency guard lives at the repo root (outside the bundle),
-      # so it needs pytest and a run from the repo root. Added 08-09-2026: it checks
-      # the README header and changelog against Info.plist, the six required
-      # Info.plist keys, and the CFBundleURLTypes shape Indigo actually accepts.
-      - name: Version consistency
+      # ONE pytest run from the repo root collects the bundle suite AND the
+      # version-consistency guard in tests/. pytest is used rather than unittest's
+      # own discovery because that cannot collect plain pytest-style test functions:
+      # it found 8 of UniFiHealth's 17 and reported OK, so that job went green having
+      # run barely half the suite. pytest collects unittest.TestCase classes too, so
+      # this is strictly wider. 23 tests here at the time of writing.
+      - name: Tests
         run: |
           pip install pytest
-          python -m pytest tests -q
+          python -m pytest -q
       - name: Lint (ruff — errors only, see ruff.toml)
         run: |
           pip install ruff
