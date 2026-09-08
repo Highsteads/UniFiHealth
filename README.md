@@ -1,5 +1,7 @@
 # UniFi Health
 
+**Version:** 0.7.1
+
 An Indigo plugin that monitors **UniFi WiFi health** — not just whether things are
 online, but *how well the radios are performing* — and runs a **config audit** that
 flags where a network is mis-set or an access point is over-powered.
