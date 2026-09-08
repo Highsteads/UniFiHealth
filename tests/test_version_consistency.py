@@ -70,7 +70,15 @@ def test_readme_header_matches_info_plist():
 # rather than skipped past: "### v1.9.1 — ...", "**2.84.4** (date) — ..." and
 # "**v2.7.1** — ...". Anchored to the line start so a version mentioned mid
 # sentence cannot be mistaken for an entry.
-_ENTRY_RE = re.compile(r"^(?:#+ +v?|\*\*v?)(\d+(?:\.\d+)+)", re.M)
+# A LIST-MARKER PREFIX IS THE COMMONEST NEAR-MISS AND IT READS EXACTLY LIKE
+# HAVING NO CHANGELOG AT ALL (found in ShellyDirect, 08-09-2026). That repo
+# writes its entries as "- **v3.18.0** — ...", the pattern required them to
+# start the line, nothing matched, and the check SKIPPED — so its README
+# changelog sat three releases behind with a test watching it and a CI job
+# reporting green. Allowing the marker is a strict widening: it can only turn a
+# skip into a real check, never the reverse. Verified across all 20 repos
+# carrying this file — it changed the verdict for ShellyDirect alone.
+_ENTRY_RE = re.compile(r"^(?:[-*+]\s+)?(?:#+ +v?|\*\*v?)(\d+(?:\.\d+)+)", re.M)
 _SECTION_RE = re.compile(
     r"^##+ *(?:Changelog|Version [Hh]istory|Release [Nn]otes|What.s [Nn]ew)\b", re.M)
 
