@@ -4,9 +4,9 @@
 # Description: UniFi Health — WiFi health, client/presence and a config audit
 #              for UniFi controllers (UDM/UDR + legacy). Read-mostly; cmd/devmgr
 #              actions for AP restart / locate.
-# Author:      CliveS & Claude Opus 4.8
-# Date:        21-07-2026
-# Version:     0.7.1
+# Author:      CliveS & Claude Fable 5.1
+# Date:        11-09-2026
+# Version:     0.7.2
 #
 # v0.6.3 (21-07-2026): shared plugin_utils.py refreshed to v1.3 — the
 # estate-wide propagation of the four Appliance Monitor deep-review fixes.
@@ -110,7 +110,7 @@ except ImportError:
 
 from presence_fusion import fused_presence, presence_source
 
-PLUGIN_VERSION = "0.7.1"
+PLUGIN_VERSION = "0.7.2"
 FOLDER_NAME = "UniFi Health"
 
 

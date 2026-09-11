@@ -1,6 +1,6 @@
 # UniFi Health
 
-**Version:** 0.7.1
+**Version:** 0.7.2
 
 An Indigo plugin that monitors **UniFi WiFi health** — not just whether things are
 online, but *how well the radios are performing* — and runs a **config audit** that
@@ -143,5 +143,7 @@ Vibed into existence by **CliveS**, who knew what he wanted, argued until he got
 © 2026 CliveS · [MIT licence](LICENSE) — copy it, fork it, bend it, break it, fix it, ship it. If it breaks, you get to keep both pieces.
 
 ## Recent changes
+
+**v0.7.2** - **The bundle now carries the standard GitHub record.** Indigo plugins can carry a small note inside the bundle saying where their source lives on GitHub, spelt the way the Indigo Domotics and community plugins spell it. This one now has it, pointing at this repository. Nothing else changed.
 
 **v0.7.1** - **The settings dialog was stretched wider than its own window, so the help text beside each setting was cut off mid-sentence.** The short help that can be attached to a setting is drawn on a single line and never wraps, so the longest one decides how wide every row is — and the window cannot be widened past a fixed maximum. Both long ones have moved into ordinary description paragraphs, which do wrap. Two new checks fail the build if any help text or setting label grows long enough to do it again. No setting or behaviour changed.
