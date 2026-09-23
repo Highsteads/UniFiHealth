@@ -136,3 +136,41 @@ def test_the_json_states_are_kept_out_of_sql_logger_once():
 def test_ignore_everything_is_never_narrowed():
     assert MOD.merge_sql_logger_ignore("*") is None
     assert MOD.merge_sql_logger_ignore("RFJSON, wifigenjson, WorstClientsJson") is None
+
+
+# ── v0.7.4: access points and presence devices ─────────────────────────────
+
+def _typed(dev_type, dev_id=8):
+    d = FakeDev()
+    d.id = dev_id
+    d.name = dev_type
+    d.deviceTypeId = dev_type
+    d.pluginProps = {"unifi_controller": "7"}
+    d.states = {}
+    return d
+
+
+def test_an_access_point_skips_uptime_and_its_text():
+    p = plugin()
+    dev = _typed("unifiAP")
+    p.deviceStartComm(dev)
+    assert dev.sharedProps["sqlLoggerIgnoreStates"] == "uptimeSeconds, clientsJson, apSummary"
+
+
+def test_a_presence_device_skips_last_seen_epoch(monkeypatch):
+    p = plugin()
+    p.client_devices = {}
+    p.client_last_seen = {}
+    p.geofence_watch = {}
+    dev = _typed("unifiClient", 9)
+    monkeypatch.setattr(MOD.indigo, "devices", {9: dev})   # the re-fetch returns it
+    p.deviceStartComm(dev)
+    assert dev.sharedProps["sqlLoggerIgnoreStates"] == "lastSeenEpoch"
+
+
+def test_a_type_with_no_list_is_never_written():
+    p = plugin()
+    dev = _typed("geofenceSwitch")
+    p._keep_churn_out_of_sql_logger(dev)
+    assert dev.shared_writes == 0
+    assert not p.logger.warning.called      # nothing to do is not a failure

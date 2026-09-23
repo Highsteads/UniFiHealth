@@ -1,6 +1,6 @@
 # UniFi Health
 
-**Version:** 0.7.3
+**Version:** 0.7.4
 
 An Indigo plugin that monitors **UniFi WiFi health** — not just whether things are
 online, but *how well the radios are performing* — and runs a **config audit** that
@@ -143,6 +143,8 @@ Vibed into existence by **CliveS**, who knew what he wanted, argued until he got
 © 2026 CliveS · [MIT licence](LICENSE) — copy it, fork it, bend it, break it, fix it, ship it. If it breaks, you get to keep both pieces.
 
 ## Recent changes
+
+**v0.7.4** - **The access points and presence devices stop filling SQL Logger's history too.** Each access point reports its uptime on every check and rewrites its two text summaries on most, and each phone's presence device records the moment it was last seen, so SQL Logger was saving about 16,000 rows a day for them. The plugin now tells SQL Logger to skip those. Presence, client counts, channel use, CPU and signal are logged exactly as before, anything you already told SQL Logger to skip is kept, and existing history is untouched.
 
 **v0.7.3** - **The controller's history is one row a minute, not six.** Each check of the controller updated its readings one at a time, and SQL Logger saved a separate history row for every one that had changed - up to six rows in the same second, every minute. The readings now go in together as one update. The plugin also tells SQL Logger to skip the three lists it keeps as text (Wi-Fi generation mix, worst clients and nearby networks), which change on most checks and cannot be charted. Every number is logged exactly as before, anything you already told SQL Logger to skip is kept, and existing history is untouched.
 

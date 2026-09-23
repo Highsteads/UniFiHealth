@@ -4,9 +4,17 @@
 # Description: UniFi Health — WiFi health, client/presence and a config audit
 #              for UniFi controllers (UDM/UDR + legacy). Read-mostly; cmd/devmgr
 #              actions for AP restart / locate.
-# Author:      CliveS & Claude Fable 5.1; Claude Opus 5.5 (0.7.3)
+# Author:      CliveS & Claude Fable 5.1; Claude Opus 5.5 (0.7.3-0.7.4)
 # Date:        23-09-2026
-# Version:     0.7.3
+# Version:     0.7.4
+#
+# v0.7.4 (23-09-2026): THE SAME FOR THE ACCESS POINTS AND PRESENCE DEVICES. An AP's
+#   uptimeSeconds ticks on every poll and its clientsJson / apSummary text change
+#   on most, and a presence device's lastSeenEpoch moves every time the phone is
+#   seen -- ~16,000 SQL Logger rows a day between them. Those four now join each
+#   device's `sqlLoggerIgnoreStates` too (SQL_LOGGER_CHURN_BY_TYPE), merged into
+#   the user's own list and never narrowing "*". Presence itself, client counts,
+#   utilisation, CPU and signal history are unchanged.
 #
 # v0.7.3 (23-09-2026): ONE HISTORY ROW PER POLL. The controller poll set ~25
 #   states one updateStateOnServer at a time, and SQL Logger stores a row for
@@ -120,13 +128,23 @@ except ImportError:
 
 from presence_fusion import fused_presence, presence_source
 
-PLUGIN_VERSION = "0.7.3"
+PLUGIN_VERSION = "0.7.4"
 FOLDER_NAME = "UniFi Health"
 
 
 # v0.7.3: controller states whose history is JSON text no chart can use, and
 # which change on most polls. SQL Logger reads `sqlLoggerIgnoreStates`.
 SQL_LOGGER_CHURN_STATES = ("wifiGenJson", "worstClientsJson", "rfJson")
+
+# v0.7.4: per device type. An AP's uptime ticks every poll and its two text
+# summaries change on most; a presence device's lastSeenEpoch moves whenever the
+# phone is seen. The restart path reads lastSeenEpoch from the live state, never
+# from history, so nothing depends on SQL Logger keeping it.
+SQL_LOGGER_CHURN_BY_TYPE = {
+    "unifiController": SQL_LOGGER_CHURN_STATES,
+    "unifiAP":         ("uptimeSeconds", "clientsJson", "apSummary"),
+    "unifiClient":     ("lastSeenEpoch",),
+}
 
 
 def merge_sql_logger_ignore(existing, extra=SQL_LOGGER_CHURN_STATES):
@@ -382,6 +400,7 @@ class Plugin(indigo.PluginBase):
                 device.stateListOrDisplayStateIdChanged()
             except Exception as err:
                 self.logger.debug(f"stateListOrDisplayStateIdChanged({device.name}): {err}")
+            self._keep_churn_out_of_sql_logger(device)
             self.next_update = 0.0
         elif device.deviceTypeId == "unifiClient":
             self.client_devices[device.id] = _as_int(device.pluginProps.get("unifi_controller"), 0)
@@ -393,6 +412,7 @@ class Plugin(indigo.PluginBase):
                 device = indigo.devices[device.id]   # re-fetch — local copy is stale
             except Exception as err:
                 self.logger.debug(f"state refresh ({device.name}): {err}")
+            self._keep_churn_out_of_sql_logger(device)
             seen = _as_int(device.states.get("lastSeenEpoch"), 0)
             if seen:
                 self.client_last_seen[device.id] = float(seen)
@@ -635,11 +655,14 @@ class Plugin(indigo.PluginBase):
     # ── v0.5.0 controller extras — WAN / clients / firmware / RF ────────────
 
     def _keep_churn_out_of_sql_logger(self, device):
-        """v0.7.3: see SQL_LOGGER_CHURN_STATES. Writes only when something is
-        missing, so a restart re-checks without rewriting."""
+        """v0.7.3/0.7.4: see SQL_LOGGER_CHURN_BY_TYPE. Writes only when something
+        is missing, so a restart re-checks without rewriting."""
+        extra = SQL_LOGGER_CHURN_BY_TYPE.get(device.deviceTypeId)
+        if not extra:
+            return
         try:
             shared = device.sharedProps
-            merged = merge_sql_logger_ignore(shared.get("sqlLoggerIgnoreStates", ""))
+            merged = merge_sql_logger_ignore(shared.get("sqlLoggerIgnoreStates", ""), extra)
             if merged is None:
                 return
             shared["sqlLoggerIgnoreStates"] = merged
@@ -647,7 +670,7 @@ class Plugin(indigo.PluginBase):
             self.logger.debug(f"{device.name}: SQL Logger now skips {merged}")
         except Exception as err:
             self.logger.warning(f"{device.name}: could not set the SQL Logger ignore list "
-                                f"({err}); history keeps the JSON states")
+                                f"({err}); history keeps the churning states")
 
     def _update_controller_extras(self, device, cache, health, clients, aps, batch):
         """Populate the richer controller states. Each block is independently
