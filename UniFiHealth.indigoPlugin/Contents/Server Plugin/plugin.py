@@ -4,9 +4,19 @@
 # Description: UniFi Health — WiFi health, client/presence and a config audit
 #              for UniFi controllers (UDM/UDR + legacy). Read-mostly; cmd/devmgr
 #              actions for AP restart / locate.
-# Author:      CliveS & Claude Fable 5.1
-# Date:        11-09-2026
-# Version:     0.7.2
+# Author:      CliveS & Claude Fable 5.1; Claude Opus 5.5 (0.7.3)
+# Date:        23-09-2026
+# Version:     0.7.3
+#
+# v0.7.3 (23-09-2026): ONE HISTORY ROW PER POLL. The controller poll set ~25
+#   states one updateStateOnServer at a time, and SQL Logger stores a row for
+#   every state write that changes something -- up to six rows in the same
+#   second, every minute (686,000 rows since 30-05-2026). The roll-up and the
+#   extras now collect into one list and go in ONE updateStatesOnServer call,
+#   then the wlanDegraded event fires. Each extras block stays independently
+#   guarded. deviceStartComm also adds the three JSON blobs (wifiGenJson,
+#   worstClientsJson, rfJson) to the controller's `sqlLoggerIgnoreStates` shared
+#   prop -- merged into the user's own list, never narrowing "*".
 #
 # v0.6.3 (21-07-2026): shared plugin_utils.py refreshed to v1.3 — the
 # estate-wide propagation of the four Appliance Monitor deep-review fixes.
@@ -110,8 +120,29 @@ except ImportError:
 
 from presence_fusion import fused_presence, presence_source
 
-PLUGIN_VERSION = "0.7.2"
+PLUGIN_VERSION = "0.7.3"
 FOLDER_NAME = "UniFi Health"
+
+
+# v0.7.3: controller states whose history is JSON text no chart can use, and
+# which change on most polls. SQL Logger reads `sqlLoggerIgnoreStates`.
+SQL_LOGGER_CHURN_STATES = ("wifiGenJson", "worstClientsJson", "rfJson")
+
+
+def merge_sql_logger_ignore(existing, extra=SQL_LOGGER_CHURN_STATES):
+    """Return the new sqlLoggerIgnoreStates value, or None when nothing changes.
+
+    Keeps every entry the user already listed, in their order, and appends the
+    missing churn states. "*" (ignore the whole device) is left as it is.
+    """
+    current = [t.strip() for t in str(existing or "").split(",") if t.strip()]
+    if len(current) == 1 and current[0] == "*":
+        return None
+    have = {t.lower() for t in current}
+    missing = [t for t in extra if t.lower() not in have]
+    if not missing:
+        return None
+    return ", ".join(current + missing)
 
 
 def _as_int(value, default):
@@ -341,6 +372,7 @@ class Plugin(indigo.PluginBase):
                 device.stateListOrDisplayStateIdChanged()
             except Exception as err:
                 self.logger.debug(f"stateListOrDisplayStateIdChanged({device.name}): {err}")
+            self._keep_churn_out_of_sql_logger(device)
             self.next_update = 0.0
         elif device.deviceTypeId == "unifiAP":
             self.ap_devices[device.id] = _as_int(device.pluginProps.get("unifi_controller"), 0)
@@ -574,29 +606,50 @@ class Plugin(indigo.PluginBase):
                 worst_util = max(worst_util, radio.get("cu_total") or 0)
         worst_sat = min([c.get("satisfaction", 100) for c in clients if c.get("satisfaction") is not None] or [100])
 
-        device.updateStateOnServer("status", "Connected")
-        device.updateStateImageOnServer(indigo.kStateImageSel.SensorOn)
-        device.updateStateOnServer("unifiOS", bool(getattr(cache["session"], "unifi_os", False)))
-        device.updateStateOnServer("wlanHealth", wlan)
-        device.updateStateOnServer("numAPs", len(aps))
-        device.updateStateOnServer("numClients", len(clients))
-        device.updateStateOnServer("worstApUtilisation", worst_util)
-        device.updateStateOnServer("worstClientSatisfaction", worst_sat)
-        device.updateStateOnServer("auditIssues", total_issues)
-
-        if wlan != "ok":
-            self._fire_event("wlanDegraded")
+        # v0.7.3: every controller state goes in ONE write per poll, so SQL
+        # Logger stores one history row instead of one per changed state.
+        batch = [
+            {"key": "status",                  "value": "Connected"},
+            {"key": "unifiOS",                 "value": bool(getattr(cache["session"], "unifi_os", False))},
+            {"key": "wlanHealth",              "value": wlan},
+            {"key": "numAPs",                  "value": len(aps)},
+            {"key": "numClients",              "value": len(clients)},
+            {"key": "worstApUtilisation",      "value": worst_util},
+            {"key": "worstClientSatisfaction", "value": worst_sat},
+            {"key": "auditIssues",             "value": total_issues},
+        ]
 
         # v0.5.0 extras (Internet/WAN, client mix, firmware count, RF) — wholly
         # isolated so a missing field or a rogueap hiccup can never break the poll.
         try:
-            self._update_controller_extras(device, cache, health, clients, aps)
+            self._update_controller_extras(device, cache, health, clients, aps, batch)
         except Exception as err:
             self.logger.debug(f"{device.name}: controller extras failed: {err}")
 
+        device.updateStatesOnServer(batch)
+        device.updateStateImageOnServer(indigo.kStateImageSel.SensorOn)
+
+        if wlan != "ok":
+            self._fire_event("wlanDegraded")
+
     # ── v0.5.0 controller extras — WAN / clients / firmware / RF ────────────
 
-    def _update_controller_extras(self, device, cache, health, clients, aps):
+    def _keep_churn_out_of_sql_logger(self, device):
+        """v0.7.3: see SQL_LOGGER_CHURN_STATES. Writes only when something is
+        missing, so a restart re-checks without rewriting."""
+        try:
+            shared = device.sharedProps
+            merged = merge_sql_logger_ignore(shared.get("sqlLoggerIgnoreStates", ""))
+            if merged is None:
+                return
+            shared["sqlLoggerIgnoreStates"] = merged
+            device.replaceSharedPropsOnServer(shared)
+            self.logger.debug(f"{device.name}: SQL Logger now skips {merged}")
+        except Exception as err:
+            self.logger.warning(f"{device.name}: could not set the SQL Logger ignore list "
+                                f"({err}); history keeps the JSON states")
+
+    def _update_controller_extras(self, device, cache, health, clients, aps, batch):
         """Populate the richer controller states. Each block is independently
         guarded: one missing subsystem or field must not blank the others."""
         h = {sub.get("subsystem"): sub for sub in (health or [])}
@@ -605,18 +658,17 @@ class Plugin(indigo.PluginBase):
         try:
             www = h.get("www", {})
             wan = h.get("wan", {})
-            device.updateStateOnServer("wanStatus", www.get("status") or wan.get("status") or "unknown")
-            device.updateStateOnServer("wanIp", wan.get("wan_ip", "") or "")
-            device.updateStateOnServer("internetLatencyMs", _as_int(www.get("latency"), 0))
-            device.updateStateOnServer("internetDrops", _as_int(www.get("drops"), 0))
-            device.updateStateOnServer("speedtestDown", round(_as_float(www.get("xput_down"), 0.0), 1))
-            device.updateStateOnServer("speedtestUp", round(_as_float(www.get("xput_up"), 0.0), 1))
+            batch.append({"key": "wanStatus", "value": www.get("status") or wan.get("status") or "unknown"})
+            batch.append({"key": "wanIp", "value": wan.get("wan_ip", "") or ""})
+            batch.append({"key": "internetLatencyMs", "value": _as_int(www.get("latency"), 0)})
+            batch.append({"key": "internetDrops", "value": _as_int(www.get("drops"), 0)})
+            batch.append({"key": "speedtestDown", "value": round(_as_float(www.get("xput_down"), 0.0), 1)})
+            batch.append({"key": "speedtestUp", "value": round(_as_float(www.get("xput_up"), 0.0), 1)})
             last = _as_int(www.get("speedtest_lastrun"), 0)
-            device.updateStateOnServer("speedtestAgeHours",
-                                       int((self._now() - last) / 3600) if last else -1)
+            batch.append({"key": "speedtestAgeHours", "value": int((self._now() - last) / 3600) if last else -1})
             gw = wan.get("gw_system-stats") or {}
-            device.updateStateOnServer("gatewayCpu", int(round(_as_float(gw.get("cpu"), 0.0))))
-            device.updateStateOnServer("gatewayMem", int(round(_as_float(gw.get("mem"), 0.0))))
+            batch.append({"key": "gatewayCpu", "value": int(round(_as_float(gw.get("cpu"), 0.0)))})
+            batch.append({"key": "gatewayMem", "value": int(round(_as_float(gw.get("mem"), 0.0)))})
         except Exception as err:
             self.logger.debug(f"WAN extras: {err}")
 
@@ -634,23 +686,23 @@ class Plugin(indigo.PluginBase):
                     gen[bucket] += 1
                 if proto in ("a", "b", "g"):
                     legacy += 1
-            device.updateStateOnServer("numWired", wired)
-            device.updateStateOnServer("numWireless", len(clients) - wired)
-            device.updateStateOnServer("numLegacyClients", legacy)
-            device.updateStateOnServer("wifiGenJson", json.dumps(gen, separators=(",", ":")))
+            batch.append({"key": "numWired", "value": wired})
+            batch.append({"key": "numWireless", "value": len(clients) - wired})
+            batch.append({"key": "numLegacyClients", "value": legacy})
+            batch.append({"key": "wifiGenJson", "value": json.dumps(gen, separators=(",", ":"))})
             worst = sorted(
                 (c for c in clients if not c.get("is_wired") and c.get("satisfaction") is not None),
                 key=lambda c: c.get("satisfaction") or 0)[:6]
             wj = [{"n": c.get("name") or c.get("hostname") or c.get("oui") or c.get("mac"),
                    "sat": c.get("satisfaction"), "sig": c.get("signal"),
                    "ap": c.get("last_uplink_name") or ""} for c in worst]
-            device.updateStateOnServer("worstClientsJson", json.dumps(wj, separators=(",", ":")))
+            batch.append({"key": "worstClientsJson", "value": json.dumps(wj, separators=(",", ":"))})
         except Exception as err:
             self.logger.debug(f"client extras: {err}")
 
         # ── Firmware updates pending ──
         try:
-            device.updateStateOnServer("apsNeedingUpdate", sum(1 for ap in aps if ap.get("upgradable")))
+            batch.append({"key": "apsNeedingUpdate", "value": sum(1 for ap in aps if ap.get("upgradable"))})
         except Exception as err:
             self.logger.debug(f"firmware extras: {err}")
 
@@ -674,9 +726,9 @@ class Plugin(indigo.PluginBase):
                     else:
                         n5 += 1
                 cache["rf24"] = rf24
-                device.updateStateOnServer("neighbourApCount", len(rogue))
-                device.updateStateOnServer("rfJson", json.dumps(
-                    {"total": len(rogue), "ch24": rf24, "n5": n5}, separators=(",", ":")))
+                batch.append({"key": "neighbourApCount", "value": len(rogue)})
+                batch.append({"key": "rfJson", "value": json.dumps(
+                    {"total": len(rogue), "ch24": rf24, "n5": n5}, separators=(",", ":"))})
             except Exception as err:
                 self.logger.debug(f"RF extras: {err}")
 
@@ -686,7 +738,7 @@ class Plugin(indigo.PluginBase):
                 info = cache["session"].get_sysinfo()
                 ver = info.get("version") or info.get("console_display_version") or ""
                 if ver:
-                    device.updateStateOnServer("controllerVersion", ver)
+                    batch.append({"key": "controllerVersion", "value": ver})
             except Exception as err:
                 self.logger.debug(f"sysinfo: {err}")
 
