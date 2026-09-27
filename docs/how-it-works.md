@@ -13,7 +13,7 @@ Every 60 seconds, or whatever you set in **Update frequency**, the plugin asks t
 
 It waits up to eight seconds for each answer.
 
-If the plugin cannot sign in — the controller cannot be found, or it turns the username and password away — the controller device shows **Unreachable** and the Event Log has a warning at each check until it can. Once the plugin is signed in, a check that gets no answer, or too slow an answer, gives one warning in the Event Log, the plugin keeps trying at each check without filling the log, and the devices keep what they last showed. When the controller answers again, the log says how many checks were missed.
+If the plugin cannot sign in — the controller cannot be found, or it turns the username and password away — the controller device shows **Unreachable** and the Event Log has a warning at each check until it can. Once the plugin is signed in, a check that gets no answer, or too slow an answer, gives one warning in the Event Log and the plugin tries again at the next check. If three checks in a row get no answer, the controller device shows **Unreachable**, just as it does when the plugin cannot sign in. While the controller is not answering, the access point and UniFi WiFi Client devices keep what they last showed. When the controller answers again, the log says how many checks were missed.
 
 The plugin only reads from the controller, apart from three things you ask for yourself: restarting an access point, flashing its light, and the **Apply Minimum RSSI** menu item.
 
@@ -41,12 +41,14 @@ At every check the plugin looks at each access point's Wi-Fi settings and notes 
 |---|---|
 | **2.4 GHz channel 40 MHz wide** | 2.4 GHz only has room for three channels that do not overlap, each 20 MHz wide. A 40 MHz channel overlaps most of the band. |
 | **2.4 GHz transmit power on High** | A loud access point pulls in devices from far away that would be better on a nearer one. |
-| **2.4 GHz minimum signal level off** | Without it, a device can hang on to a distant access point with a weak signal. |
+| **2.4 GHz minimum signal level off** | Without it, a device can hang on to a distant access point with a weak signal. UniFi Network 10 and later have no such setting, so there it is not checked. |
 | **A 2.4 GHz channel shared by more than two of your access points** | Access points on the same channel take turns, so they slow each other down. |
 | **2.4 GHz busier than the utilisation warning level** | On a busy channel every device waits longer to send. The level is set in the plugin's settings, 70% to start with. |
 | **5 GHz transmit power on High** | The same reason as for 2.4 GHz. |
 
 6 GHz is not checked. The results show on each access point's **Audit Flags** and **Config OK** states, the total on the controller's **Config Audit Issue Count**, and **Plugins → UniFi Health → Run WiFi Config Audit (log report)** writes them all to the Event Log.
+
+When the check finds a problem on an access point that it had not found before, the Event Log says so and the **Config Audit Found an Issue** trigger runs. When a band gets busier than the warning level, the **An AP Band Went Over the Utilisation Threshold** trigger runs.
 
 The check only reports. It never changes a setting.
 

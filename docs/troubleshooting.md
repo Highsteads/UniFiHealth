@@ -20,7 +20,7 @@ The dialog needs an address, a username and a password, from its own boxes or th
 
 ## The controller shows "Unreachable"
 
-The plugin cannot sign in to the controller. The Event Log has a warning at each check that says why.
+The plugin cannot sign in to the controller, or the controller has not answered three checks in a row. The Event Log has a warning at each check that says why.
 
 - **"controller unreachable at ..."** — nothing answered at that address and port. Check the address in **Controller IP / Hostname** or the settings file, and check **Port** — 443 for a UniFi console, usually 8443 for the UniFi Network application on a computer or an older Cloud Key.
 - **"login failed"** — the controller turned the username and password away. Check them, and check the account is a local account on the controller, not a Ubiquiti cloud account, and does not use two-step verification.
@@ -28,9 +28,9 @@ The plugin cannot sign in to the controller. The Event Log has a warning at each
 
 If you have just changed `IndigoSecrets.py`, choose **Plugins → UniFi Health → Reload** so the plugin reads it again.
 
-## The log says "controller poll failed (will keep retrying quietly)"
+## The log says "no answer from the controller"
 
-A check went wrong part way through, most often because the controller was slow to answer or had gone away for a moment. The plugin keeps trying at each check without filling the log, and the devices keep what they last showed. When a check works again, the log says **controller poll recovered** and how many were missed. If it never recovers, check the controller is running and reachable from the Mac.
+The controller was slow to answer or had gone away for a moment. The plugin tries again at the next check, and the devices keep what they last showed. When it answers again, the log says so and how many checks were missed. If three checks in a row fail, the controller shows **Unreachable** and the section above applies.
 
 ## No access point devices appear
 
@@ -52,11 +52,11 @@ The plugin keeps each access point's name in step with its name in UniFi. Rename
 
 ## The Audit Flags say "2.4GHz min-RSSI off" on every access point
 
-The settings check reads a minimum signal level setting that UniFi Network 10 no longer uses for 2.4 GHz, so on that version there may be nothing you can change to clear it. The other flags are unaffected.
+Turn on the minimum signal level for 2.4 GHz on each access point, in the UniFi app or with **Apply Minimum RSSI**. On UniFi Network 10 and later the plugin does not check this, because there is no such setting. If the flag still shows there, check **Controller Version** on the controller device has a version in it.
 
-## Apply Minimum RSSI says every access point failed
+## Apply Minimum RSSI says the controller has no minimum RSSI on each access point
 
-On recent versions of UniFi Network the controller does not accept this change, and 2.4 GHz is always refused. [The plugin menu](plugin-menu.md) explains. Nothing on your access points has changed.
+Your controller runs UniFi Network 10 or later, which moved this setting off the access points. The plugin sends nothing. [The plugin menu](plugin-menu.md) explains.
 
 ## A phone I want to follow is not in the Client list
 

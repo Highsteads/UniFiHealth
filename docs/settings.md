@@ -12,14 +12,14 @@ Open these with **Plugins → UniFi Health → Configure**. They apply to everyt
 | Setting | What it does |
 |---|---|
 | **Update frequency (seconds)** | How often the plugin checks the controller. It starts at 60, and anything below 30 is treated as 30. |
-| **Utilisation warning threshold (%)** | How busy a 2.4 GHz channel can get before the settings check reports it. It starts at 70. |
+| **Utilisation warning threshold (%)** | How busy a 2.4 GHz channel can get before the settings check reports it, and how busy any band can get before the **An AP Band Went Over the Utilisation Threshold** trigger runs. It starts at 70. |
 | **Satisfaction warning threshold** | The satisfaction score below which a UniFi WiFi Client device runs the **A Client Dropped Below the Satisfaction Threshold** trigger. It starts at 80. |
 | **Presence: away after (minutes)** | How long a device you follow must be off your network before it counts as away. It starts at 10, and anything below 2 is treated as 2. Arriving home always counts at once. |
 | **Auto-create AP devices** | Ticked, the plugin creates a device for every access point it finds, including a console with its own Wi-Fi such as a Dream Router. It is ticked to start with. |
 | **Auto-remove AP devices** | Ticked, the plugin deletes an access point's device once you remove the access point from UniFi, unless a trigger, schedule, action group or control page still uses it. It is ticked to start with. [How it works](how-it-works.md) explains the safeguards. |
 | **AP offline grace (minutes)** | How long an access point must be away from the controller before its device goes off. It starts at 3, which rides out the restarts of a firmware update. Set it to 0 to mark an access point offline at once. |
 | **Pushover WiFi alerts** | Ticked, the plugin sends a Pushover message when an access point restarts or the controller device becomes **Unreachable**. You need the Pushover plugin installed and turned on. It is unticked to start with. |
-| **Log level** | This version of the plugin saves this setting but does not use it. |
+| **Log level** | How much the plugin writes to the Event Log. **Info**, to start with, shows what changes. **Debug** adds every step, which helps when asking for help. **Warning** and **Error** keep the log to problems only. |
 
 A change takes effect as soon as you click **Save**.
 
@@ -33,7 +33,7 @@ UNIFI_USERNAME = "your-local-unifi-user"
 UNIFI_PASSWORD = "your-password"
 ```
 
-Change the three values to your own. If you use Pushover and want the messages to go to a particular Pushover user, add that user's key too:
+Change the three values to your own. The plugin comes with `IndigoSecrets_example.py`, inside the plugin, which lists every name it reads. If you use Pushover and want the messages to go to a particular Pushover user, add that user's key too:
 
 ```python
 PUSHOVER_USER_TOKEN = "your-pushover-user-key"

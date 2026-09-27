@@ -4,9 +4,18 @@
 # Description: UniFi Health — WiFi health, client/presence and a config audit
 #              for UniFi controllers (UDM/UDR + legacy). Read-mostly; cmd/devmgr
 #              actions for AP restart / locate.
-# Author:      CliveS & Claude Fable 5.1; Claude Opus 5.5 (0.7.3-0.7.4)
-# Date:        23-09-2026
-# Version:     0.7.4
+# Author:      CliveS & Claude Fable 5.1; Claude Opus 5.5 (0.7.3-0.8.0)
+# Date:        27-09-2026
+# Version:     0.8.0
+#
+# v0.8.0 (27-09-2026): FAULTS FOUND WHILE WRITING THE GUIDE. The "Config Audit
+#   Found an Issue" and "AP Band Went Over the Utilisation Threshold" events now
+#   fire, once per new finding / crossing. The Log level setting is applied. A
+#   signed-in controller that stops answering shows Unreachable after three
+#   failed checks in a row (it never did), and its devices are left alone while
+#   it is down. On UniFi Network 10+ the audit no longer flags "2.4GHz min-RSSI
+#   off" (no such setting exists there) and Apply Minimum RSSI says so once and
+#   sends nothing. The controller version is re-read at each plugin start.
 #
 # v0.7.4 (23-09-2026): THE SAME FOR THE ACCESS POINTS AND PRESENCE DEVICES. An AP's
 #   uptimeSeconds ticks on every poll and its clientsJson / apSummary text change
@@ -95,6 +104,7 @@
 
 import indigo
 import json
+import re
 import os as _os
 import sys as _sys
 
@@ -128,7 +138,7 @@ except ImportError:
 
 from presence_fusion import fused_presence, presence_source
 
-PLUGIN_VERSION = "0.7.4"
+PLUGIN_VERSION = "0.8.0"
 FOLDER_NAME = "UniFi Health"
 
 
@@ -161,6 +171,76 @@ def merge_sql_logger_ignore(existing, extra=SQL_LOGGER_CHURN_STATES):
     if not missing:
         return None
     return ", ".join(current + missing)
+
+
+# v0.8.0: a controller showing Connected is only marked Unreachable once this
+# many checks IN A ROW have failed, so one slow answer is not an outage. Before
+# 0.8.0 a signed-in controller that stopped answering never showed Unreachable
+# at all: the error escaped to runConcurrentThread's quiet-retry path.
+CONTROLLER_FAILS_BEFORE_UNREACHABLE = 3
+
+# v0.8.0: the "band went over the utilisation threshold" event re-arms only once
+# the band has dropped this many points BELOW the threshold, so a band hovering
+# on the line fires once rather than on every other check.
+UTIL_REARM_MARGIN = 5
+
+# UniFi Network 10 took the minimum signal level off each access point's radios
+# (measured on 10.5.67, 29-08-2026 -- see unifi_api.py above set_radio_min_rssi):
+# rest/device is gone, 2.4 GHz has no minimum RSSI anywhere, and 5/6 GHz moved
+# to each WLAN. The last Network major that kept it per radio:
+PER_AP_MIN_RSSI_LAST_MAJOR = 9
+
+
+def network_major_version(version):
+    """Leading major number of a UniFi Network version ("10.5.67" -> 10), or
+    None when there is no version or it does not start with a number."""
+    m = re.match(r"\s*v?(\d+)", str(version or ""))
+    return int(m.group(1)) if m else None
+
+
+def per_ap_min_rssi_supported(version):
+    """True when this Network version keeps a minimum RSSI on each AP radio,
+    False when it does not (10 and later), None when the version is unknown."""
+    major = network_major_version(version)
+    if major is None:
+        return None
+    return major <= PER_AP_MIN_RSSI_LAST_MAJOR
+
+
+def audit_finding_key(flag):
+    """The identity of an audit flag with its running numbers masked, so a
+    finding whose count or percentage moves is still the SAME finding. The
+    channel number stays: ch6 and ch11 crowded are different problems."""
+    key = re.sub(r"shared by \d+ APs", "shared by N APs", str(flag))
+    return re.sub(r"util [\d.]+%", "util N%", key)
+
+
+def _is_utilisation_flag(flag):
+    return " util " in f" {flag} "
+
+
+def new_config_findings(previous_flags, current_flags):
+    """Audit flags in current_flags that were not already reported.
+
+    previous_flags is the persisted auditFlags text (", "-joined), so a restart
+    does not re-announce what was already there. The utilisation flag is left
+    out: it has its own apHighUtilisation event."""
+    before = {audit_finding_key(f.strip())
+              for f in str(previous_flags or "").split(", ") if f.strip()}
+    return [f for f in current_flags
+            if not _is_utilisation_flag(f) and audit_finding_key(f) not in before]
+
+
+def utilisation_crossed(latched, util, threshold, margin=UTIL_REARM_MARGIN):
+    """Return (fire, latched) for one band's utilisation reading.
+
+    Fires once when the band goes over the threshold, then stays latched until
+    it drops `margin` points below it."""
+    if latched:
+        return False, util >= threshold - margin
+    if util > threshold:
+        return True, True
+    return False, False
 
 
 def _as_int(value, default):
@@ -265,6 +345,8 @@ class Plugin(indigo.PluginBase):
 
         if install_timestamp_filter:
             install_timestamp_filter(self, enabled=True)
+        # v0.8.0: the Log level setting was saved but never read.
+        self._apply_log_level(pluginPrefs.get("logLevel", "20"))
 
         self.update_frequency = max(30.0, _as_float(pluginPrefs.get("updateFrequency"), 60.0))
         self.util_warn = _as_int(pluginPrefs.get("utilWarnPct"), 70)
@@ -290,6 +372,18 @@ class Plugin(indigo.PluginBase):
         self.event_triggers = {}   # triggerId -> trigger
         self._alert_times = {}     # alert-key -> last-sent epoch (Pushover debounce)
         self.next_update = 0.0
+
+    def _apply_log_level(self, value):
+        """Set the Event Log level from the Log level setting (10/20/30/40).
+        Anything else falls back to Info rather than failing the start."""
+        level = _as_int(value, 20)
+        if level not in (10, 20, 30, 40):
+            level = 20
+        try:
+            self.indigo_log_handler.setLevel(level)
+        except Exception as err:
+            self.logger.debug(f"log level {level} not applied: {err}")
+        return level
 
     # ── Lifecycle ─────────────────────────────────────────────────────────
 
@@ -349,12 +443,7 @@ class Plugin(indigo.PluginBase):
                 if now >= self.next_update:
                     self.next_update = now + self.update_frequency
                     try:
-                        for controller_id in list(self.controllers):
-                            self._poll_controller(indigo.devices[controller_id])
-                        for ap_id in list(self.ap_devices):
-                            self._update_ap(indigo.devices[ap_id])
-                        for client_id in list(self.client_devices):
-                            self._update_client(indigo.devices[client_id])
+                        self._poll_cycle()
                         if poll_failures:
                             self.logger.info(
                                 f"controller poll recovered after {poll_failures} failed cycle(s)")
@@ -371,6 +460,24 @@ class Plugin(indigo.PluginBase):
                 self.sleep(2.0)
         except self.StopThread:
             pass
+
+    def _poll_cycle(self):
+        """One check: every controller, then the APs and clients whose
+        controller answered. v0.8.0: a controller that did not answer leaves
+        its devices as they were, rather than re-reading its last answer (which
+        would mark every phone as just seen, so no-one ever went away)."""
+        for controller_id in list(self.controllers):
+            self._poll_controller(indigo.devices[controller_id])
+        for ap_id in list(self.ap_devices):
+            if self._controller_answered(self.ap_devices.get(ap_id)):
+                self._update_ap(indigo.devices[ap_id])
+        for client_id in list(self.client_devices):
+            if self._controller_answered(self.client_devices.get(client_id)):
+                self._update_client(indigo.devices[client_id])
+
+    def _controller_answered(self, controller_id):
+        cache = self.controllers.get(controller_id)
+        return bool(cache and cache.get("poll_ok"))
 
     @staticmethod
     def _now():
@@ -567,23 +674,24 @@ class Plugin(indigo.PluginBase):
         cache = self.controllers.get(device.id)
         if cache is None:
             return
+        # v0.8.0: ANY failure counts, not only UniFiError. Once signed in, a
+        # timeout or refused connection comes from requests itself, and it used
+        # to escape to runConcurrentThread's quiet retry: the device kept saying
+        # Connected and neither the trigger nor the Pushover ever fired.
         try:
             session = self._session_for(device)
             devices = session.get_devices()
             clients = session.get_clients()
             health = session.get_health()
-        except UniFiError as err:
-            was_connected = (device.states.get("status") == "Connected")
-            self.logger.warning(f"{device.name}: {err}")
-            device.updateStateOnServer("status", "Unreachable")
-            device.updateStateImageOnServer(indigo.kStateImageSel.SensorTripped)
-            if cache.get("session"):
-                cache["session"].close()
-                cache["session"] = None
-            self._fire_event("controllerUnreachable")
-            if was_connected:
-                self._pushover("ctrl:" + str(device.id), "WiFi Health", "UniFi controller unreachable")
+        except Exception as err:
+            self._poll_failed(device, cache, err)
             return
+        cache["poll_ok"] = True
+        if cache.get("fails"):
+            if device.states.get("status") == "Connected":
+                self.logger.info(f"{device.name}: the controller answered again after "
+                                 f"{cache['fails']} failed check(s)")
+            cache["fails"] = 0
 
         cache["devices_by_mac"] = {d.get("mac"): d for d in devices}
         cache["clients_by_mac"] = {c.get("mac"): c for c in clients}
@@ -615,12 +723,15 @@ class Plugin(indigo.PluginBase):
         # auto-remove devices for APs the controller has forgotten (own pref)
         self._reap_removed_aps(device.id, set(cache["devices_by_mac"]))
 
+        # the audit needs the Network version (min-RSSI moved in Network 10)
+        version = self._controller_version(device, cache, session)
+
         # controller roll-up states
         wlan = next((h.get("status") for h in health if h.get("subsystem") == "wlan"), "unknown")
         worst_util = 0
         total_issues = 0
         for ap in aps:
-            flags = self._audit_ap(ap, ch24)
+            flags = self._audit_ap(ap, ch24, version)
             total_issues += len(flags)
             for radio in ap.get("radio_table_stats", []):
                 worst_util = max(worst_util, radio.get("cu_total") or 0)
@@ -651,6 +762,32 @@ class Plugin(indigo.PluginBase):
 
         if wlan != "ok":
             self._fire_event("wlanDegraded")
+
+    def _poll_failed(self, device, cache, err):
+        """A check of this controller failed. A controller showing Connected
+        must fail CONTROLLER_FAILS_BEFORE_UNREACHABLE checks in a row before it
+        is marked Unreachable (one slow answer is not an outage); one already
+        Unreachable, or never connected, stays or goes Unreachable at once."""
+        cache["poll_ok"] = False
+        cache["fails"] = cache.get("fails", 0) + 1
+        if cache.get("session"):
+            cache["session"].close()        # sign in afresh at the next check
+            cache["session"] = None
+        was_connected = (device.states.get("status") == "Connected")
+        if was_connected and cache["fails"] < CONTROLLER_FAILS_BEFORE_UNREACHABLE:
+            if cache["fails"] == 1:
+                self.logger.warning(
+                    f"{device.name}: no answer from the controller ({err}). It will show "
+                    f"Unreachable if {CONTROLLER_FAILS_BEFORE_UNREACHABLE} checks in a row fail.")
+            else:
+                self.logger.debug(f"{device.name}: no answer x{cache['fails']}: {err}")
+            return
+        self.logger.warning(f"{device.name}: {err}")
+        device.updateStateOnServer("status", "Unreachable")
+        device.updateStateImageOnServer(indigo.kStateImageSel.SensorTripped)
+        self._fire_event("controllerUnreachable")
+        if was_connected:
+            self._pushover("ctrl:" + str(device.id), "WiFi Health", "UniFi controller unreachable")
 
     # ── v0.5.0 controller extras — WAN / clients / firmware / RF ────────────
 
@@ -755,20 +892,38 @@ class Plugin(indigo.PluginBase):
             except Exception as err:
                 self.logger.debug(f"RF extras: {err}")
 
-        # ── Controller version (sysinfo) — fetch once, it rarely changes ──
-        if not device.states.get("controllerVersion"):
+        # ── Controller version (sysinfo) — fetched once per plugin start by
+        # _controller_version, written whenever it differs (an upgrade shows) ──
+        ver = cache.get("controller_version") or ""
+        if ver and ver != device.states.get("controllerVersion"):
+            batch.append({"key": "controllerVersion", "value": ver})
+
+    def _controller_version(self, device, cache, session):
+        """The controller's UniFi Network version. Asked for once per plugin
+        start (v0.8.0; it used to be asked once EVER, so an upgrade never
+        showed), retried until it answers, and the last stored state stands in
+        meanwhile."""
+        if not cache.get("version_fetched"):
             try:
-                info = cache["session"].get_sysinfo()
+                info = session.get_sysinfo()
                 ver = info.get("version") or info.get("console_display_version") or ""
                 if ver:
-                    batch.append({"key": "controllerVersion", "value": ver})
+                    cache["controller_version"] = str(ver)
+                    cache["version_fetched"] = True
             except Exception as err:
                 self.logger.debug(f"sysinfo: {err}")
+        if not cache.get("controller_version"):
+            cache["controller_version"] = str(device.states.get("controllerVersion", "") or "")
+        return cache["controller_version"]
 
     # ── Config audit (the headline feature) ────────────────────────────────
 
-    def _audit_ap(self, ap_data, ch24):
-        """Return a list of human-readable config issues for this AP."""
+    def _audit_ap(self, ap_data, ch24, controller_version=""):
+        """Return a list of human-readable config issues for this AP.
+
+        v0.8.0: the 2.4GHz min-RSSI check is skipped on UniFi Network 10 and
+        later, where the per-radio field is left over from older versions and
+        no setting exists to clear it."""
         flags = []
         cfg = {r.get("radio"): r for r in ap_data.get("radio_table", [])}
         stt = {r.get("radio"): r for r in ap_data.get("radio_table_stats", [])}
@@ -780,7 +935,8 @@ class Plugin(indigo.PluginBase):
                 flags.append("2.4GHz width 40MHz (use 20)")
             if ng.get("tx_power_mode") == "high":
                 flags.append("2.4GHz TX power High")
-            if not ng.get("min_rssi_enabled", False):
+            if (per_ap_min_rssi_supported(controller_version) is not False
+                    and not ng.get("min_rssi_enabled", False)):
                 flags.append("2.4GHz min-RSSI off")
             chan = ngs.get("channel") or ng.get("channel")   # live assigned channel
             if chan and ch24.get(str(chan), 0) > 2:
@@ -931,11 +1087,23 @@ class Plugin(indigo.PluginBase):
                            "Access point rebooted: " + device.name.replace("UniFi AP ", ""))
 
         # per-band curated states
+        util_over = cache.setdefault("util_over", {})
+        busy_bands = []
         for radio_id, band in RADIO_BAND.items():
             c = cfg.get(radio_id, {})
             s = stt.get(radio_id, {})
             if not c and not s:
                 continue
+            # v0.8.0: apHighUtilisation, once per crossing. The latch is seeded
+            # from the last stored reading, so a restart does not re-announce.
+            util_key = (device.address, band)
+            if util_key not in util_over:
+                util_over[util_key] = (_as_float(device.states.get(f"band{band}Utilisation"), 0.0)
+                                       > self.util_warn)
+            fire, util_over[util_key] = utilisation_crossed(
+                util_over[util_key], _as_float(s.get("cu_total"), 0.0), self.util_warn)
+            if fire:
+                busy_bands.append(f"{CLIENT_BAND_UI.get(radio_id, band)} GHz at {s.get('cu_total')}%")
             states.append({"key": f"band{band}Channel", "value": str(s.get("channel") or c.get("channel", ""))})
             states.append({"key": f"band{band}Width", "value": int(c.get("ht") or 0)})
             states.append({"key": f"band{band}Utilisation", "value": s.get("cu_total") or 0})
@@ -947,7 +1115,8 @@ class Plugin(indigo.PluginBase):
                 states.append({"key": "band24MinRssiOn", "value": bool(c.get("min_rssi_enabled", False))})
 
         # audit
-        flags = self._audit_ap(data, cache["ch24"])
+        flags = self._audit_ap(data, cache["ch24"], cache.get("controller_version") or "")
+        new_findings = new_config_findings(device.states.get("auditFlags", ""), flags)
         states.append({"key": "configOK", "value": len(flags) == 0})
         states.append({"key": "auditFlags", "value": ", ".join(flags)})
 
@@ -1001,6 +1170,14 @@ class Plugin(indigo.PluginBase):
         states.append({"key": "clientsJson", "value": json.dumps(ap_clients, separators=(",", ":"))})
 
         device.updateStatesOnServer(states)
+        # v0.8.0: the two audit events, once per new finding, not every check
+        if new_findings:
+            self.logger.info(f"{device.name}: the settings check found {', '.join(new_findings)}")
+            self._fire_event("configIssueFound")
+        if busy_bands:
+            self.logger.info(f"{device.name}: {' and '.join(busy_bands)} busy, over the "
+                             f"{self.util_warn}% warning level")
+            self._fire_event("apHighUtilisation")
         # Green (on) when the AP is up — the audit is shown via configOK / auditFlags /
         # the summary, not the status dot. (Offline path above uses the red tripped image.)
         device.updateStateImageOnServer(indigo.kStateImageSel.SensorOn)
@@ -1239,7 +1416,7 @@ class Plugin(indigo.PluginBase):
             for mac, data in cache["devices_by_mac"].items():
                 if not _is_access_point(data):
                     continue
-                flags = self._audit_ap(data, ch24)
+                flags = self._audit_ap(data, ch24, cache.get("controller_version") or "")
                 name = data.get("name", mac)
                 if flags:
                     self.logger.warning(f"  {name}: {', '.join(flags)}")
@@ -1260,6 +1437,16 @@ class Plugin(indigo.PluginBase):
                 yield dev, self._session_for(dev)
             except Exception as err:
                 self.logger.error(f"{dev.name}: cannot reach the controller — {err}")
+
+    def _min_rssi_refusal(self, dev, session):
+        """The plain-English reason this controller cannot take a per-AP
+        minimum RSSI, or "" when it can (or its version is unknown)."""
+        ver = self._controller_version(dev, self.controllers.get(dev.id) or {}, session)
+        if per_ap_min_rssi_supported(ver) is not False:
+            return ""
+        return (f"{dev.name} runs UniFi Network {ver}, which has no minimum RSSI on each "
+                f"access point. 2.4 GHz has none at all, and for 5 and 6 GHz it is set on "
+                f"each Wi-Fi network in the UniFi Network app.")
 
     def menu_preview_min_rssi(self, valuesDict=None, typeId=None):
         """Show what setting a min-RSSI would do, WITHOUT sending anything.
@@ -1302,6 +1489,9 @@ class Plugin(indigo.PluginBase):
             total += len(casualties)
             for sig, name, ap in sorted(casualties):
                 self.logger.warning(f"    WOULD DISCONNECT  {sig:>4} dBm  {name}  (on {ap})")
+            refusal = self._min_rssi_refusal(dev, session)
+            if refusal:
+                self.logger.info(f"    {refusal} Apply Minimum RSSI cannot set it there.")
         if total == 0:
             self.logger.info(f"    nothing currently sits at or below {target} dBm — safe to apply")
         else:
@@ -1329,8 +1519,14 @@ class Plugin(indigo.PluginBase):
 
         self.logger.info(f"===== Minimum RSSI {'DRY RUN' if dry else 'APPLY'}: "
                          f"{band} -> {target} dBm, enabled={enable} =====")
-        ok_n = skip_n = fail_n = 0
+        ok_n = skip_n = fail_n = refused_n = 0
         for dev, session in self._each_controller():
+            # v0.8.0: say so plainly, once, instead of an error per access point
+            refusal = self._min_rssi_refusal(dev, session)
+            if refusal:
+                refused_n += 1
+                self.logger.warning(f"    {refusal} Nothing was sent.")
+                continue
             try:
                 devices = session.get_devices()
             except Exception as err:
@@ -1356,7 +1552,9 @@ class Plugin(indigo.PluginBase):
                 else:
                     fail_n += 1
                     self.logger.error(f"    {name}: {msg}")
-        self.logger.info(f"===== {ok_n} changed, {skip_n} already correct, {fail_n} failed =====")
+        self.logger.info(f"===== {ok_n} changed, {skip_n} already correct, {fail_n} failed"
+                         + (f", {refused_n} controller(s) cannot take it" if refused_n else "")
+                         + " =====")
         if fail_n:
             self.logger.error("Some APs did not take the setting — see the lines above.")
         return True
@@ -1393,4 +1591,5 @@ class Plugin(indigo.PluginBase):
             self.away_minutes = max(2, _as_int(valuesDict.get("awayMinutes"), 10))
             self.ap_offline_grace_secs = max(0, _as_int(valuesDict.get("apOfflineGraceMinutes"), 3)) * 60
             self.pushover_alerts = bool(valuesDict.get("pushoverAlerts", False))
+            self._apply_log_level(valuesDict.get("logLevel", "20"))
             self.next_update = 0.0

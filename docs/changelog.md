@@ -7,6 +7,17 @@ nav_order: 9
 
 The newest version is at the top.
 
+## 0.8.0 — 27 September 2026
+
+A tidy-up of the things I found wrong while writing this guide.
+
+- **Two triggers now work.** **Config Audit Found an Issue** runs when the settings check finds a new problem on an access point, and **An AP Band Went Over the Utilisation Threshold** runs when a band gets busier than your warning level. Each runs once when the problem appears, not at every check, and restarting the plugin does not run them again for problems it already knew about. A band has to drop five points below the level before it can run the trigger again, so one sitting right on the line does not keep setting it off.
+- **The Log level setting now does something.** Choose Debug to see everything, or Warning or Error for a quieter log.
+- **A controller that stops answering now shows Unreachable.** Before, once the plugin had signed in, a controller that went quiet kept showing **Connected** and nothing told you. Now three failed checks in a row mark it **Unreachable**, which runs its trigger and sends the Pushover message if you use them. One slow answer on its own still only puts a line in the log. While the controller is down, the access points and phones keep what they last showed, rather than being worked out again from its last answer.
+- **Minimum signal level on UniFi Network 10.** UniFi Network 10 no longer has a minimum signal level on each access point. The settings check no longer reports **2.4GHz min-RSSI off** there, since there is nothing you could change to clear it, and **Apply Minimum RSSI** now says so in one line and sends nothing, rather than listing every access point as failed. On older versions it works as before, and 2.4 GHz is no longer turned away.
+- **Controller Version** is read again each time the plugin starts, so it shows the new version after you update the controller.
+- The plugin now comes with an example settings file, `IndigoSecrets_example.py`, holding the names of the settings it reads.
+
 ## 0.7.4 — 23 September 2026
 
 The access points and the UniFi WiFi Client devices stop filling SQL Logger's history. Each access point reports its uptime at every check and rewrites its summary and its list of connected devices at most, and each client records the moment it was last seen, so SQL Logger was saving about 16,000 rows a day for them. The plugin now tells SQL Logger to skip those. Presence, device counts, channel use, CPU and signal are kept exactly as before, anything you had already told SQL Logger to skip is kept, and existing history is untouched.

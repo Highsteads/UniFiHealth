@@ -5,10 +5,12 @@
 #              UniFiHealth plugin. Handles UniFi OS (UDM/UDR) and legacy
 #              controllers. Read endpoints for health/diagnostics; cmd/devmgr
 #              for AP restart / PoE power-cycle / locate.
-# Author:      CliveS & Claude Opus 4.8
-# Date:        29-06-2026
-# Version:     1.1
+# Author:      CliveS & Claude Opus 4.8; Claude Opus 5.5 (1.2)
+# Date:        27-09-2026
+# Version:     1.2
 #
+# v1.2 (27-09-2026): set_radio_min_rssi no longer refuses 2.4GHz outright --
+#       the plugin decides by Network version before calling it.
 # v1.1: added get_rogue_aps (stat/rogueap, RF-neighbour analysis) and
 #       get_sysinfo (stat/sysinfo, controller version).
 #
@@ -207,8 +209,9 @@ class UniFiSession:
 
     # ── what min-RSSI actually is on Network 10 (measured 29-08-2026) ──────
     #
-    # DO NOT reinstate per-radio min_rssi writes without re-testing. On this
-    # controller (Network 10.5.67) they are a dead end, in two separate ways:
+    # DO NOT send per-radio min_rssi writes to Network 10+ without re-testing.
+    # The plugin refuses them up front there (plugin.py per_ap_min_rssi_supported).
+    # On this controller (Network 10.5.67) they are a dead end, in two ways:
     #
     #   * `rest/device` — the classic device-config endpoint — is GONE. Every
     #     shape of it (by _id, by mac, the bare collection) returns
@@ -308,15 +311,17 @@ class UniFiSession:
         if not (-94 <= value <= -60):
             return False, f"min_rssi {value} outside the sane range -94..-60"
 
-        if radio == "ng":
-            return False, ("2.4GHz has no min-RSSI on this controller — the field "
-                           "is vestigial and writes are silently ignored. Use "
-                           "bss_transition or minrate_ng_data_rate_kbps instead.")
+        # v1.2: no blanket 2.4GHz refusal here any more. It was right for
+        # Network 10 and wrong for 9 and earlier, where the per-radio field is
+        # real. The plugin now refuses the whole controller up front on
+        # Network 10+ (per_ap_min_rssi_supported), and the read-back below
+        # still reports any field a controller silently ignores.
         try:
             doc = self.get_device_config(device_id, site)
         except UniFiError as err:
-            return False, (f"per-radio config write is unavailable on this controller "
-                           f"({err}). See the note above set_radio_min_rssi.")
+            return False, (f"this controller has no per-access-point settings route "
+                           f"({err}), which is how UniFi Network 10 and later behave. "
+                           f"Nothing was changed.")
         if not doc:
             return False, "device config not found"
         table = doc.get("radio_table")

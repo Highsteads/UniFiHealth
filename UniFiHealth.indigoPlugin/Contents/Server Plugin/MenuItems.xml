@@ -37,7 +37,7 @@
         <CallbackMethod>menu_apply_min_rssi</CallbackMethod>
         <ConfigUI>
             <Field id="warn2" type="label" fontSize="small">
-                <Label>Writes to the controller. Every AP is read, edited and read back again, so a setting the controller silently ignores is reported as a failure rather than a success. Run the preview first.</Label>
+                <Label>Writes to the controller. Every AP is read, edited and read back again, so a setting the controller silently ignores is reported as a failure rather than a success. Run the preview first. UniFi Network 10 and later have no minimum RSSI on each access point, so on those versions the plugin says so and sends nothing.</Label>
             </Field>
             <Field id="band" type="menu" defaultValue="ng">
                 <Label>Band:</Label>

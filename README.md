@@ -2,7 +2,7 @@
 
 **See how well your UniFi Wi-Fi is working from Indigo, and which settings are holding it back.**
 
-**Version:** 0.7.4 | **Author:** CliveS & Claude | **Needs:** Indigo 2022.1 or later and a UniFi controller
+**Version:** 0.8.0 | **Author:** CliveS & Claude | **Needs:** Indigo 2022.1 or later and a UniFi controller
 
 **[Read the full guide](https://highsteads.github.io/UniFiHealth/)** — setting up, what everything means, and what to do when something goes wrong.
 
@@ -43,9 +43,9 @@ The [full guide](https://highsteads.github.io/UniFiHealth/) goes through each st
 
 ## What's new
 
-**v0.7.4** — The access points and the UniFi WiFi Client devices stop filling SQL Logger's history. Uptime, each access point's summary and list of connected devices, and each client's last-seen time changed at most checks and added about 16,000 rows a day. The plugin now tells SQL Logger to skip them. Everything else is kept exactly as before, and existing history is untouched.
+**v0.8.0** — The **Config Audit Found an Issue** and **An AP Band Went Over the Utilisation Threshold** triggers now run, once for each new problem. The **Log level** setting now works. A controller that stops answering now shows **Unreachable** after three failed checks, with its trigger and Pushover message. On UniFi Network 10 the settings check no longer reports a minimum signal level you cannot change, and **Apply Minimum RSSI** says plainly that the controller cannot take it.
 
-**v0.7.3** — The controller's history is one row per check rather than up to six, and the three lists it keeps as text are no longer saved by SQL Logger.
+**v0.7.4** — The access points and the UniFi WiFi Client devices stop filling SQL Logger's history. Uptime, each access point's summary and list of connected devices, and each client's last-seen time changed at most checks and added about 16,000 rows a day. The plugin now tells SQL Logger to skip them. Everything else is kept exactly as before, and existing history is untouched.
 
 Every version is listed in the [version history](https://highsteads.github.io/UniFiHealth/changelog.html).
 

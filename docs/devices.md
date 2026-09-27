@@ -17,7 +17,7 @@ The states below are listed by the names Indigo shows when you build a trigger o
 
 ## UniFi Controller
 
-One for your controller. The device list shows **Connected**, or **Unreachable** when the plugin cannot sign in to it or it turns a request away.
+One for your controller. The device list shows **Connected**, or **Unreachable** when the plugin cannot sign in to it, it turns a request away, or it has not answered three checks in a row.
 
 ### The whole network
 
@@ -25,7 +25,7 @@ One for your controller. The device list shows **Connected**, or **Unreachable**
 |---|---|
 | **Controller Status** | **Connected** or **Unreachable**. This is what the device list shows. |
 | **Is UniFi OS** | Ticked for a UniFi console such as a Dream Machine or Dream Router, unticked for the older UniFi Network application. |
-| **Controller Version** | The version of the UniFi software on the controller. |
+| **Controller Version** | The version of the UniFi software on the controller, read each time the plugin starts. |
 | **WLAN Health** | UniFi's own verdict on your Wi-Fi as a whole — **ok** when all is well. |
 | **Number of APs** | How many access points the controller has. |
 | **Number of Clients** | How many devices are connected, wired and wireless together. |
@@ -107,7 +107,7 @@ The same states appear for 2.4 GHz, 5 GHz and 6 GHz, where the access point has 
 | **Clients** | How many devices are connected on that band. |
 | **TX Power** | The transmit power setting, such as **high**, **medium** or **auto**. 2.4 and 5 GHz only. |
 | **Satisfaction** | The satisfaction of the devices on that band. 2.4 and 5 GHz only. |
-| **2.4GHz Min-RSSI Enabled** | Whether the 2.4 GHz radio is set to drop devices whose signal falls below a set level. |
+| **2.4GHz Min-RSSI Enabled** | Whether the 2.4 GHz radio is set to drop devices whose signal falls below a set level. UniFi Network 10 and later have no such setting, so there it only shows what an older version left behind. |
 | **Co-channel Neighbour APs (2.4GHz)** | How many of the neighbours' access points are on the same 2.4 GHz channel as this one. |
 
 ### The settings check
