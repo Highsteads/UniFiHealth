@@ -1,0 +1,28 @@
+# GitHub Pages configuration for the UniFi Health guide.
+# Source: the docs/ folder of the main branch, built by GitHub's own Jekyll.
+# The theme is fetched at build time, so nothing is vendored here.
+title: UniFi Health for Indigo
+description: >-
+  A plain-English guide to the UniFi Health plugin for Indigo: what it does,
+  how to set it up, and what to do when something goes wrong.
+url: https://highsteads.github.io
+baseurl: /UniFiHealth
+remote_theme: just-the-docs/just-the-docs@v0.12.0
+
+plugins:
+  - jekyll-remote-theme
+  - jekyll-include-cache
+  - jekyll-seo-tag
+  - jekyll-relative-links
+
+search_enabled: true
+heading_anchors: true
+nav_enabled: true
+back_to_top: true
+back_to_top_text: Back to top
+aux_links:
+  GitHub: https://github.com/Highsteads/UniFiHealth
+  Download: https://github.com/Highsteads/UniFiHealth/releases/latest
+aux_links_new_tab: false
+footer_content: >-
+  © 2026 CliveS · MIT licence
