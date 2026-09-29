@@ -7,6 +7,10 @@ nav_order: 9
 
 The newest version is at the top.
 
+## 0.8.2 — 29 September 2026
+
+A radio that is switched off no longer counts. An access point keeps reporting a 2.4 GHz channel while its 2.4 GHz radio is off, because it still listens, so the settings check counted it as sharing that channel and could report "shared by 3 APs" when only two were using it. It also checked the switched-off radio's width and power. The check now skips any radio you have turned off.
+
 ## 0.8.1 — 29 September 2026
 
 Far fewer "busy" lines in the Event Log.

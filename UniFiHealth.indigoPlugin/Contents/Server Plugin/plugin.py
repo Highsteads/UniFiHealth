@@ -4,9 +4,15 @@
 # Description: UniFi Health — WiFi health, client/presence and a config audit
 #              for UniFi controllers (UDM/UDR + legacy). Read-mostly; cmd/devmgr
 #              actions for AP restart / locate.
-# Author:      CliveS & Claude Fable 5.1; Claude Opus 5.5 (0.7.3-0.8.1)
+# Author:      CliveS & Claude Fable 5.1; Claude Opus 5.5 (0.7.3-0.8.2)
 # Date:        29-09-2026 23:40
-# Version:     0.8.1
+# Version:     0.8.2
+#
+# v0.8.2 (29-09-2026): A RADIO SWITCHED OFF IS NOT SHARING A CHANNEL. A disabled
+#   2.4 GHz radio still reports a channel while it scans, so the settings check
+#   counted it (count_24ghz_channels now skips it via radio_is_on) and ran every
+#   2.4 GHz check on it. Live: the Bedroom U6-LR, 2.4 GHz off, made channel 6
+#   look shared by three APs.
 #
 # v0.8.1 (29-09-2026): A BUSY RADIO IS JUDGED ON ITS 15-MINUTE AVERAGE. The
 #   "over the utilisation warning level" line and the apHighUtilisation event
@@ -145,7 +151,7 @@ except ImportError:
 
 from presence_fusion import fused_presence, presence_source
 
-PLUGIN_VERSION = "0.8.1"
+PLUGIN_VERSION = "0.8.2"
 FOLDER_NAME = "UniFi Health"
 
 
@@ -241,6 +247,32 @@ def new_config_findings(previous_flags, current_flags):
               for f in str(previous_flags or "").split(", ") if f.strip()}
     return [f for f in current_flags
             if not _is_utilisation_flag(f) and audit_finding_key(f) not in before]
+
+
+def radio_is_on(ap_data, radio):
+    """False when the AP's config switches this radio off.
+
+    v0.8.1: a disabled radio still reports a channel in radio_table_stats (it
+    keeps scanning), so counting it made a Bedroom U6-LR with 2.4 GHz off look
+    like a third AP sharing channel 6 (29-09-2026)."""
+    for entry in ap_data.get("radio_table", []):
+        if entry.get("radio") == radio:
+            return entry.get("tx_power_mode") != "disabled"
+    return True
+
+
+def count_24ghz_channels(devices):
+    """{channel: number of APs broadcasting on it} for 2.4 GHz, from the live
+    channel (radio_table_stats), not the "auto" config. Radios switched off are
+    left out."""
+    ch24 = {}
+    for ap in devices:
+        if not _is_access_point(ap) or not radio_is_on(ap, "ng"):
+            continue
+        for radio in ap.get("radio_table_stats", []):
+            if radio.get("radio") == "ng" and radio.get("channel"):
+                ch24[str(radio["channel"])] = ch24.get(str(radio["channel"]), 0) + 1
+    return ch24
 
 
 def utilisation_average(samples, now, util, window=UTIL_WINDOW_SECONDS):
@@ -722,13 +754,8 @@ class Plugin(indigo.PluginBase):
         cache["clients_by_mac"] = {c.get("mac"): c for c in clients}
 
         # cross-AP 2.4 GHz channel reuse map (for the audit)
-        ch24 = {}
         aps = [d for d in devices if _is_access_point(d)]
-        for ap in aps:
-            for radio in ap.get("radio_table_stats", []):   # live channel, not "auto" config
-                if radio.get("radio") == "ng" and radio.get("channel"):
-                    ch24[str(radio["channel"])] = ch24.get(str(radio["channel"]), 0) + 1
-        cache["ch24"] = ch24
+        ch24 = cache["ch24"] = count_24ghz_channels(devices)
 
         # auto-create an AP device for any access point not yet represented
         if self.pluginPrefs.get("autoCreateAPs", True):
@@ -955,7 +982,7 @@ class Plugin(indigo.PluginBase):
         ng, ngs = cfg.get("ng", {}), stt.get("ng", {})
         na = cfg.get("na", {})
 
-        if ng:
+        if ng and radio_is_on(ap_data, "ng"):   # v0.8.1: nothing to check on a radio that is off
             if str(ng.get("ht")) == "40":
                 flags.append("2.4GHz width 40MHz (use 20)")
             if ng.get("tx_power_mode") == "high":

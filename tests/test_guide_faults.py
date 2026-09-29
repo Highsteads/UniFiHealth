@@ -387,3 +387,26 @@ def test_the_api_no_longer_refuses_2_4ghz_outright():
     ok, msg = s.set_radio_min_rssi("x1", "ng", -70)
     assert ok, msg
     assert s.put_device_config.called
+
+
+# ── A radio switched off is not sharing a channel (0.8.1) ───────────────────
+
+def _ap(ch, tx="auto"):
+    return {"type": "uap", "is_access_point": True,
+            "radio_table": [{"radio": "ng", "ht": "20", "tx_power_mode": tx}],
+            "radio_table_stats": [{"radio": "ng", "channel": ch, "cu_total": 20}]}
+
+
+def test_a_disabled_radio_is_not_counted_on_its_channel():
+    """Live 29-09-2026: the Bedroom U6-LR has 2.4 GHz off but still reports
+    channel 6 while it scans, so the audit said 'ch6 shared by 3 APs'."""
+    devices = [_ap(6), _ap(6), _ap(6, tx="disabled"), _ap(11)]
+    assert MOD.count_24ghz_channels(devices) == {"6": 2, "11": 1}
+
+
+def test_a_disabled_radio_raises_no_findings():
+    p = plugin()
+    bedroom = _ap(6, tx="disabled")
+    bedroom["radio_table"][0]["ht"] = "40"
+    assert p._audit_ap(bedroom, {"6": 3}) == []
+    assert "2.4GHz ch6 shared by 3 APs" in p._audit_ap(_ap(6), {"6": 3})

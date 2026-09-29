@@ -2,7 +2,7 @@
 
 **See how well your UniFi Wi-Fi is working from Indigo, and which settings are holding it back.**
 
-**Version:** 0.8.1 | **Author:** CliveS & Claude | **Needs:** Indigo 2022.1 or later and a UniFi controller
+**Version:** 0.8.2 | **Author:** CliveS & Claude | **Needs:** Indigo 2022.1 or later and a UniFi controller
 
 **[Read the full guide](https://highsteads.github.io/UniFiHealth/)** — setting up, what everything means, and what to do when something goes wrong.
 
@@ -42,6 +42,8 @@ The UniFi Network controller, on a UniFi console such as a Dream Machine or Drea
 The [full guide](https://highsteads.github.io/UniFiHealth/) goes through each step, explains every setting, and covers what to do if something does not work.
 
 ## What's new
+
+**v0.8.2** — An access point with its 2.4 GHz radio switched off no longer counts towards a shared channel, and the settings check no longer looks at a radio that is off. Before, a switched-off radio could make a channel look shared by one access point too many.
 
 **v0.8.1** — Far fewer "busy" lines in the Event Log. An access point's band is now judged on how busy it has been over the last 15 minutes, not on one reading, and has to calm down to 10 points below your warning level before it can warn again. A busy 2.4 GHz radio jumps up and down from one minute to the next, so the old rule warned hundreds of times a day for the same thing.
 
