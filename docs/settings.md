@@ -12,7 +12,7 @@ Open these with **Plugins → UniFi Health → Configure**. They apply to everyt
 | Setting | What it does |
 |---|---|
 | **Update frequency (seconds)** | How often the plugin checks the controller. It starts at 60, and anything below 30 is treated as 30. |
-| **Utilisation warning threshold (%)** | How busy a 2.4 GHz channel can get before the settings check reports it, and how busy any band can get before the **An AP Band Went Over the Utilisation Threshold** trigger runs. It starts at 70. |
+| **Utilisation warning threshold (%)** | How busy a 2.4 GHz channel can get before the settings check reports it, and how busy any band can get, on average over 15 minutes, before the Event Log says so and the **An AP Band Went Over the Utilisation Threshold** trigger runs. It starts at 70. |
 | **Satisfaction warning threshold** | The satisfaction score below which a UniFi WiFi Client device runs the **A Client Dropped Below the Satisfaction Threshold** trigger. It starts at 80. |
 | **Presence: away after (minutes)** | How long a device you follow must be off your network before it counts as away. It starts at 10, and anything below 2 is treated as 2. Arriving home always counts at once. |
 | **Auto-create AP devices** | Ticked, the plugin creates a device for every access point it finds, including a console with its own Wi-Fi such as a Dream Router. It is ticked to start with. |

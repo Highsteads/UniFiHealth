@@ -4,9 +4,16 @@
 # Description: UniFi Health — WiFi health, client/presence and a config audit
 #              for UniFi controllers (UDM/UDR + legacy). Read-mostly; cmd/devmgr
 #              actions for AP restart / locate.
-# Author:      CliveS & Claude Fable 5.1; Claude Opus 5.5 (0.7.3-0.8.0)
-# Date:        27-09-2026
-# Version:     0.8.0
+# Author:      CliveS & Claude Fable 5.1; Claude Opus 5.5 (0.7.3-0.8.1)
+# Date:        29-09-2026 23:40
+# Version:     0.8.1
+#
+# v0.8.1 (29-09-2026): A BUSY RADIO IS JUDGED ON ITS 15-MINUTE AVERAGE. The
+#   "over the utilisation warning level" line and the apHighUtilisation event
+#   now use the average of the last 15 minutes (utilisation_average) and re-arm
+#   only once it is 10 points below the level. 0.8.0 judged single readings with
+#   a 5-point margin, and a busy 2.4 GHz radio swings 60-99% minute to minute,
+#   so it logged ~280 lines a day here. The same 16 days replayed: ~7.
 #
 # v0.8.0 (27-09-2026): FAULTS FOUND WHILE WRITING THE GUIDE. The "Config Audit
 #   Found an Issue" and "AP Band Went Over the Utilisation Threshold" events now
@@ -138,7 +145,7 @@ except ImportError:
 
 from presence_fusion import fused_presence, presence_source
 
-PLUGIN_VERSION = "0.8.0"
+PLUGIN_VERSION = "0.8.1"
 FOLDER_NAME = "UniFi Health"
 
 
@@ -179,10 +186,15 @@ def merge_sql_logger_ignore(existing, extra=SQL_LOGGER_CHURN_STATES):
 # at all: the error escaped to runConcurrentThread's quiet-retry path.
 CONTROLLER_FAILS_BEFORE_UNREACHABLE = 3
 
-# v0.8.0: the "band went over the utilisation threshold" event re-arms only once
-# the band has dropped this many points BELOW the threshold, so a band hovering
-# on the line fires once rather than on every other check.
-UTIL_REARM_MARGIN = 5
+# v0.8.1: the "band went over the utilisation threshold" warning judges the
+# AVERAGE of the last UTIL_WINDOW_SECONDS, not one reading, and re-arms only once
+# that average has dropped UTIL_REARM_MARGIN points below the threshold. A busy
+# 2.4 GHz radio swings 60-99% from one minute to the next (measured 29-09-2026
+# across six APs over 16 days), so 0.8.0's single-reading rule with a 5-point
+# margin logged ~280 lines a day. Replaying the same 16 days: 15-minute average
+# with a 10-point margin gives ~7 a day across all the APs.
+UTIL_WINDOW_SECONDS = 900
+UTIL_REARM_MARGIN = 10
 
 # UniFi Network 10 took the minimum signal level off each access point's radios
 # (measured on 10.5.67, 29-08-2026 -- see unifi_api.py above set_radio_min_rssi):
@@ -231,8 +243,21 @@ def new_config_findings(previous_flags, current_flags):
             if not _is_utilisation_flag(f) and audit_finding_key(f) not in before]
 
 
+def utilisation_average(samples, now, util, window=UTIL_WINDOW_SECONDS):
+    """Add one reading to `samples` (a list of (epoch, percent), edited in place)
+    and return the average over the last `window` seconds.
+
+    Returns None until the readings span at least 60% of the window, so a
+    plugin start or a newly seen band is not judged on a minute or two."""
+    samples.append((now, util))
+    samples[:] = [x for x in samples if x[0] > now - window]
+    if samples[-1][0] - samples[0][0] < window * 0.6:
+        return None
+    return sum(x[1] for x in samples) / len(samples)
+
+
 def utilisation_crossed(latched, util, threshold, margin=UTIL_REARM_MARGIN):
-    """Return (fire, latched) for one band's utilisation reading.
+    """Return (fire, latched) for one band's utilisation (the window average).
 
     Fires once when the band goes over the threshold, then stays latched until
     it drops `margin` points below it."""
@@ -1088,6 +1113,8 @@ class Plugin(indigo.PluginBase):
 
         # per-band curated states
         util_over = cache.setdefault("util_over", {})
+        util_samples = cache.setdefault("util_samples", {})
+        now = self._now()
         busy_bands = []
         for radio_id, band in RADIO_BAND.items():
             c = cfg.get(radio_id, {})
@@ -1100,10 +1127,15 @@ class Plugin(indigo.PluginBase):
             if util_key not in util_over:
                 util_over[util_key] = (_as_float(device.states.get(f"band{band}Utilisation"), 0.0)
                                        > self.util_warn)
-            fire, util_over[util_key] = utilisation_crossed(
-                util_over[util_key], _as_float(s.get("cu_total"), 0.0), self.util_warn)
-            if fire:
-                busy_bands.append(f"{CLIENT_BAND_UI.get(radio_id, band)} GHz at {s.get('cu_total')}%")
+            # v0.8.1: judged on the 15-minute average, not one reading
+            average = utilisation_average(util_samples.setdefault(util_key, []), now,
+                                          _as_float(s.get("cu_total"), 0.0))
+            if average is not None:
+                fire, util_over[util_key] = utilisation_crossed(
+                    util_over[util_key], average, self.util_warn)
+                if fire:
+                    busy_bands.append(f"{CLIENT_BAND_UI.get(radio_id, band)} GHz has averaged "
+                                      f"{round(average)}%")
             states.append({"key": f"band{band}Channel", "value": str(s.get("channel") or c.get("channel", ""))})
             states.append({"key": f"band{band}Width", "value": int(c.get("ht") or 0)})
             states.append({"key": f"band{band}Utilisation", "value": s.get("cu_total") or 0})
@@ -1175,7 +1207,8 @@ class Plugin(indigo.PluginBase):
             self.logger.info(f"{device.name}: the settings check found {', '.join(new_findings)}")
             self._fire_event("configIssueFound")
         if busy_bands:
-            self.logger.info(f"{device.name}: {' and '.join(busy_bands)} busy, over the "
+            self.logger.info(f"{device.name}: {' and '.join(busy_bands)} busy over the last "
+                             f"{UTIL_WINDOW_SECONDS // 60} minutes, over the "
                              f"{self.util_warn}% warning level")
             self._fire_event("apHighUtilisation")
         # Green (on) when the AP is up — the audit is shown via configOK / auditFlags /

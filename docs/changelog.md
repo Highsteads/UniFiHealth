@@ -7,6 +7,14 @@ nav_order: 9
 
 The newest version is at the top.
 
+## 0.8.1 — 29 September 2026
+
+Far fewer "busy" lines in the Event Log.
+
+- **A band is judged on the last 15 minutes, not one reading.** A busy 2.4 GHz radio jumps between about 60% and 99% from one minute to the next, so 0.8.0 warned every time it climbed back over your warning level: about 280 lines a day on a house with six access points. The line and the **An AP Band Went Over the Utilisation Threshold** trigger now look at the average over the last 15 minutes. The same fortnight replayed under the new rule gives about seven a day.
+- **It has to calm down properly before it can warn again.** The average must drop 10 points below your warning level, up from 5.
+- After the plugin starts, a band needs about ten minutes of readings before it can warn.
+
 ## 0.8.0 — 27 September 2026
 
 A tidy-up of the things I found wrong while writing this guide.

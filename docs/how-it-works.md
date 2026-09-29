@@ -48,7 +48,7 @@ At every check the plugin looks at each access point's Wi-Fi settings and notes 
 
 6 GHz is not checked. The results show on each access point's **Audit Flags** and **Config OK** states, the total on the controller's **Config Audit Issue Count**, and **Plugins → UniFi Health → Run WiFi Config Audit (log report)** writes them all to the Event Log.
 
-When the check finds a problem on an access point that it had not found before, the Event Log says so and the **Config Audit Found an Issue** trigger runs. When a band gets busier than the warning level, the **An AP Band Went Over the Utilisation Threshold** trigger runs.
+When the check finds a problem on an access point that it had not found before, the Event Log says so and the **Config Audit Found an Issue** trigger runs. When a band has been busier than the warning level on average over the last 15 minutes, the Event Log says so and the **An AP Band Went Over the Utilisation Threshold** trigger runs.
 
 The check only reports. It never changes a setting.
 

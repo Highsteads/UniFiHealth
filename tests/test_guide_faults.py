@@ -248,26 +248,70 @@ def test_a_moving_count_is_the_same_finding():
     assert MOD.new_config_findings("", ["2.4GHz util 90%"]) == []
 
 
-def test_a_busy_band_fires_once_per_crossing():
+def _feed(p, dev, data, readings, clock, step=60):
+    """One _update_ap per reading, a minute apart on a fake clock."""
+    for util in readings:
+        data["radio_table_stats"][0]["cu_total"] = util
+        p._update_ap(dev)
+        clock[0] += step
+
+
+def _clocked_plugin():
     p = plugin()
+    clock = [1_000_000.0]
+    p._now = lambda: clock[0]
+    return p, clock
+
+
+def test_a_busy_band_fires_once_per_crossing():
+    p, clock = _clocked_plugin()
     data = _ap_data(util=85)
     dev = _ap_setup(p, data, {"auditFlags": "", "band24Utilisation": 0})
-    p._update_ap(dev)
+    _feed(p, dev, data, [85] * 8, clock)               # under 60% of the window: no verdict yet
+    assert fired(p, "apHighUtilisation") == 0
+    _feed(p, dev, data, [85] * 3, clock)
     assert fired(p, "apHighUtilisation") == 1
-    for util in (80, 72, 66):                         # still busy, or not clear yet
-        data["radio_table_stats"][0]["cu_total"] = util
-        p._update_ap(dev)
+    _feed(p, dev, data, [62] * 20 + [85] * 20, clock)  # 62 is under 70 but not 10 below: no re-arm
     assert fired(p, "apHighUtilisation") == 1
-    for util in (50, 80):                             # cleared, then busy again
-        data["radio_table_stats"][0]["cu_total"] = util
-        p._update_ap(dev)
+    _feed(p, dev, data, [40] * 20 + [85] * 20, clock)  # cleared, then busy again
     assert fired(p, "apHighUtilisation") == 2
+    p.logger.info.assert_any_call(
+        "UniFi AP Hall: 2.4 GHz has averaged 85% busy over the last 15 minutes, "
+        "over the 70% warning level")
+
+
+def test_a_swinging_band_fires_once_not_every_swing():
+    """The shape measured on the live APs, 29-09-2026: readings jumping between
+    the low 60s and the 90s from one minute to the next. 0.8.0 logged a line at
+    every climb back over 70."""
+    p, clock = _clocked_plugin()
+    data = _ap_data(util=62)
+    dev = _ap_setup(p, data, {"auditFlags": "", "band24Utilisation": 0})
+    _feed(p, dev, data, [62, 95, 64, 88, 61, 97, 63, 90] * 30, clock)
+    assert fired(p, "apHighUtilisation") == 1
+
+
+def test_one_spike_is_not_a_busy_band():
+    p, clock = _clocked_plugin()
+    data = _ap_data(util=30)
+    dev = _ap_setup(p, data, {"auditFlags": "", "band24Utilisation": 0})
+    _feed(p, dev, data, [30] * 15 + [99, 99] + [30] * 15, clock)
+    assert fired(p, "apHighUtilisation") == 0
+
+
+def test_the_average_forgets_readings_older_than_the_window():
+    samples = []
+    assert MOD.utilisation_average(samples, 0, 90, window=900) is None
+    assert MOD.utilisation_average(samples, 600, 90, window=900) == 90
+    assert MOD.utilisation_average(samples, 1200, 30, window=900) == 60   # the 0 s reading dropped
+    assert [t for t, _ in samples] == [600, 1200]
 
 
 def test_a_restart_does_not_refire_a_band_already_busy():
-    p = plugin()
-    dev = _ap_setup(p, _ap_data(util=85), {"auditFlags": "2.4GHz util 84%", "band24Utilisation": 84})
-    p._update_ap(dev)
+    p, clock = _clocked_plugin()
+    data = _ap_data(util=85)
+    dev = _ap_setup(p, data, {"auditFlags": "2.4GHz util 84%", "band24Utilisation": 84})
+    _feed(p, dev, data, [85] * 20, clock)
     assert fired(p, "apHighUtilisation") == 0
 
 

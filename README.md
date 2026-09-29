@@ -2,7 +2,7 @@
 
 **See how well your UniFi Wi-Fi is working from Indigo, and which settings are holding it back.**
 
-**Version:** 0.8.0 | **Author:** CliveS & Claude | **Needs:** Indigo 2022.1 or later and a UniFi controller
+**Version:** 0.8.1 | **Author:** CliveS & Claude | **Needs:** Indigo 2022.1 or later and a UniFi controller
 
 **[Read the full guide](https://highsteads.github.io/UniFiHealth/)** — setting up, what everything means, and what to do when something goes wrong.
 
@@ -42,6 +42,8 @@ The UniFi Network controller, on a UniFi console such as a Dream Machine or Drea
 The [full guide](https://highsteads.github.io/UniFiHealth/) goes through each step, explains every setting, and covers what to do if something does not work.
 
 ## What's new
+
+**v0.8.1** — Far fewer "busy" lines in the Event Log. An access point's band is now judged on how busy it has been over the last 15 minutes, not on one reading, and has to calm down to 10 points below your warning level before it can warn again. A busy 2.4 GHz radio jumps up and down from one minute to the next, so the old rule warned hundreds of times a day for the same thing.
 
 **v0.8.0** — The **Config Audit Found an Issue** and **An AP Band Went Over the Utilisation Threshold** triggers now run, once for each new problem. The **Log level** setting now works. A controller that stops answering now shows **Unreachable** after three failed checks, with its trigger and Pushover message. On UniFi Network 10 the settings check no longer reports a minimum signal level you cannot change, and **Apply Minimum RSSI** says plainly that the controller cannot take it.
 

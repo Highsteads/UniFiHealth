@@ -31,7 +31,7 @@ To use one, create a new trigger, set its type to **UniFi Health**, and choose t
 | **An Access Point Rebooted** | Once, when the plugin sees an access point has restarted. |
 | **The UniFi Controller Became Unreachable** | At each check while the controller device shows **Unreachable**. A controller that was **Connected** only turns **Unreachable** after three checks in a row get no answer. |
 | **Config Audit Found an Issue (wrong setting / over-powered AP)** | Once, when the settings check finds a problem on an access point that it had not found before. It does not run again while the problem stays, or when the plugin restarts. A busy channel is left to the next trigger. |
-| **An AP Band Went Over the Utilisation Threshold** | Once, when a band on an access point gets busier than the **Utilisation warning threshold** setting. It can run again once that band has dropped five points below the threshold. |
+| **An AP Band Went Over the Utilisation Threshold** | Once, when a band on an access point has been busier than the **Utilisation warning threshold** setting, on average, over the last 15 minutes. It can run again once that average has dropped 10 points below the threshold. |
 | **WLAN Subsystem Health Not OK** | At each check while UniFi's own verdict on your Wi-Fi is anything other than **ok**. |
 | **A Tracked Client Arrived (presence became home)** | When a UniFi WiFi Client device changes from away to home. |
 | **A Tracked Client Left (presence became away)** | When a UniFi WiFi Client device changes from home to away. |
