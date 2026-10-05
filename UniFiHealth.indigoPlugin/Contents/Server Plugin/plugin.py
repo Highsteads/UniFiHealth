@@ -4,9 +4,18 @@
 # Description: UniFi Health — WiFi health, client/presence and a config audit
 #              for UniFi controllers (UDM/UDR + legacy). Read-mostly; cmd/devmgr
 #              actions for AP restart / locate.
-# Author:      CliveS & Claude Fable 5.1; Claude Opus 5.5 (0.7.3-0.9.0)
-# Date:        05-10-2026 11:40
-# Version:     0.9.0
+# Author:      CliveS & Claude Fable 5.1; Claude Opus 5.5 (0.7.3-0.9.1)
+# Date:        05-10-2026 18:10
+# Version:     0.9.1
+#
+# v0.9.1 (05-10-2026): PRESENCE WHILE THE CONTROLLER IS NOT ANSWERING. The
+#   geofence fast path re-read the cached client list even after a failed
+#   poll, so a phone that left during an outage was written HOME with a fresh
+#   lastSeenEpoch, and that fake sighting held back the real away. Wi-Fi
+#   evidence now carries the time of the poll it came from (poll_epoch); with
+#   no answer the geofence decides alone (_presence_without_controller) and
+#   last-seen never moves. _fire_event iterates a snapshot and guards each
+#   trigger. ssl_verify now restarts the controller (didDeviceCommPropertyChange).
 #
 # v0.9.0 (05-10-2026): SET ACCESS POINT TRANSMIT POWER. A new device action
 #   sets one band's power (Auto, Low, Medium, High or a custom dBm) on one AP,
@@ -158,7 +167,7 @@ except ImportError:
 
 from presence_fusion import fused_presence, presence_source
 
-PLUGIN_VERSION = "0.9.0"
+PLUGIN_VERSION = "0.9.1"
 FOLDER_NAME = "UniFi Health"
 
 
@@ -612,10 +621,12 @@ class Plugin(indigo.PluginBase):
 
     @staticmethod
     def didDeviceCommPropertyChange(orig_dev, new_dev):
-        # Restart comm only when the controller binding, target MAC or
-        # geofence pairing changes.
-        keys = ("address", "port", "username", "password", "unifi_controller",
-                "geofence_device")
+        # Restart comm only when the controller binding, target MAC,
+        # geofence pairing or TLS setting changes. v0.9.1: ssl_verify added,
+        # so a changed Verify SSL builds a fresh session (it was only read
+        # when the session was first made).
+        keys = ("address", "port", "username", "password", "ssl_verify",
+                "unifi_controller", "geofence_device")
         return any(orig_dev.pluginProps.get(k) != new_dev.pluginProps.get(k) for k in keys)
 
     # ── Geofence fusion (v0.6.0) ───────────────────────────────────────────
@@ -751,6 +762,10 @@ class Plugin(indigo.PluginBase):
             self._poll_failed(device, cache, err)
             return
         cache["poll_ok"] = True
+        # v0.9.1: the time of this answer. Wi-Fi evidence carries it, so a
+        # client row is dated by the poll it came from, never by whoever
+        # happens to read it later (the geofence fast path).
+        cache["poll_epoch"] = self._now()
         if cache.get("fails"):
             if device.states.get("status") == "Connected":
                 self.logger.info(f"{device.name}: the controller answered again after "
@@ -1276,13 +1291,27 @@ class Plugin(indigo.PluginBase):
         self._fire_event("clientArrived" if new_presence == "home" else "clientLeft")
 
     def _update_client(self, device):
+        """Work out presence for one tracked client. Called from the poll
+        cycle, and from the geofence fast path in deviceUpdated, which
+        re-reads the last answer rather than asking the controller.
+
+        v0.9.1: the controller's client list is only evidence while the
+        controller is answering, and only as of the poll it came from. When
+        it is not answering, the geofence decides alone (or, with no
+        geofence, the verdict holds); the cached row is never read. The
+        geofence path never moves lastSeenEpoch or client_last_seen on.
+        """
         controller_id = self.client_devices.get(device.id)
         cache = self.controllers.get(controller_id)
         if not cache:
             return
         now = self._now()
-        data = cache["clients_by_mac"].get(device.address)
         geo_home = self._geo_home_for(device)
+        if not cache.get("poll_ok"):
+            self._presence_without_controller(device, geo_home)
+            return
+        data = cache["clients_by_mac"].get(device.address)
+        seen_at = cache.get("poll_epoch") or now
         if not data:
             # Not on the network right now. Wi-Fi-only presence is patient
             # (phones nap off WiFi constantly); with a geofence paired the
@@ -1314,8 +1343,11 @@ class Plugin(indigo.PluginBase):
                 device.updateStateImageOnServer(indigo.kStateImageSel.SensorTripped)
             return
 
-        # On the network: home, instantly.
-        self.client_last_seen[device.id] = now
+        # On the network: home, instantly. The sighting is dated by the poll
+        # that saw it; a re-read from the geofence path writes the same time
+        # again, so it can never make a phone look more recently seen.
+        seen_at = max(seen_at, self.client_last_seen.get(device.id, 0.0))
+        self.client_last_seen[device.id] = seen_at
         sat = data.get("satisfaction")
         signal = data.get("signal")
         ap_name = ""
@@ -1333,7 +1365,7 @@ class Plugin(indigo.PluginBase):
             {"key": "vendor", "value": data.get("oui", "")},
             {"key": "offlineSeconds", "value": 0},
             {"key": "minutesSinceSeen", "value": 0},
-            {"key": "lastSeenEpoch", "value": int(now)},
+            {"key": "lastSeenEpoch", "value": int(seen_at)},
             {"key": "presenceSource", "value": presence_source(True, geo_home)},
             {"key": "clientSummary", "value": f"HOME · {signal}dBm sat={sat} @ {ap_name}"},
         ]
@@ -1342,6 +1374,23 @@ class Plugin(indigo.PluginBase):
         device.updateStateImageOnServer(indigo.kStateImageSel.SensorOn)
         if sat is not None and sat < self.sat_warn:
             self._fire_event("clientLowSatisfaction")
+
+    def _presence_without_controller(self, device, geo_home):
+        """v0.9.1: the controller is not answering, so there is no Wi-Fi
+        evidence at all. With a geofence paired it decides on its own; with
+        none, nothing changes until the controller answers again. Last-seen,
+        signal and the other Wi-Fi states are left exactly as they were."""
+        if geo_home is None:
+            return
+        verdict = "home" if geo_home else "away"
+        device.updateStatesOnServer([
+            {"key": "presenceSource", "value": "geofence"},
+            {"key": "clientSummary",
+             "value": f"{verdict.upper()} (geofence · controller not answering)"},
+        ])
+        self._set_presence(device, verdict)
+        device.updateStateImageOnServer(indigo.kStateImageSel.SensorTripped if geo_home
+                                        else indigo.kStateImageSel.SensorOff)
 
     # ── Custom event firing (canonical trigger pattern) ────────────────────
 
@@ -1352,9 +1401,18 @@ class Plugin(indigo.PluginBase):
         self.event_triggers.pop(trigger.id, None)
 
     def _fire_event(self, event_id):
-        for trigger in self.event_triggers.values():
-            if trigger.pluginTypeId == event_id:
+        """v0.9.1: iterate a snapshot (a trigger can stop processing while
+        another runs, which changed the dict mid-loop and raised), and guard
+        each execute on its own so one bad trigger cannot skip the rest, or
+        abort the poll that fired it."""
+        for trigger in list(self.event_triggers.values()):
+            if trigger.pluginTypeId != event_id:
+                continue
+            try:
                 indigo.trigger.execute(trigger)
+            except Exception as err:
+                self.logger.warning(f"trigger {getattr(trigger, 'id', '?')} for "
+                                    f"{event_id} failed to run: {err}")
 
     def _pushover(self, key, title, body, cooldown=1800):
         """Send a Pushover alert (vibrate), debounced per key by cooldown seconds.

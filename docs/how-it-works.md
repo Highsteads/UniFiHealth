@@ -13,7 +13,7 @@ Every 60 seconds, or whatever you set in **Update frequency**, the plugin asks t
 
 It waits up to eight seconds for each answer.
 
-If the plugin cannot sign in — the controller cannot be found, or it turns the username and password away — the controller device shows **Unreachable** and the Event Log has a warning at each check until it can. Once the plugin is signed in, a check that gets no answer, or too slow an answer, gives one warning in the Event Log and the plugin tries again at the next check. If three checks in a row get no answer, the controller device shows **Unreachable**, just as it does when the plugin cannot sign in. While the controller is not answering, the access point and UniFi WiFi Client devices keep what they last showed. When the controller answers again, the log says how many checks were missed.
+If the plugin cannot sign in — the controller cannot be found, or it turns the username and password away — the controller device shows **Unreachable** and the Event Log has a warning at each check until it can. Once the plugin is signed in, a check that gets no answer, or too slow an answer, gives one warning in the Event Log and the plugin tries again at the next check. If three checks in a row get no answer, the controller device shows **Unreachable**, just as it does when the plugin cannot sign in. While the controller is not answering, the access point and UniFi WiFi Client devices keep what they last showed, with one exception: a phone with a geofence switch paired follows the switch, as the next section explains. When the controller answers again, the log says how many checks were missed.
 
 The plugin only reads from the controller, apart from three things you ask for yourself: restarting an access point, flashing its light, and the **Apply Minimum RSSI** menu item.
 
@@ -81,6 +81,8 @@ From then on, the two work together like this:
 | No | Off | **away**, at once, with no ten-minute wait |
 
 The plugin acts on the switch the moment it changes, rather than at the next check. **Presence Source** shows what decided each verdict.
+
+While the controller is not answering, the plugin cannot tell whether the phone is on your Wi-Fi, so the switch decides on its own: on is **home** and off is **away**. **Presence Source** shows **geofence** and the summary says the controller is not answering. Nothing marks the phone as seen until the controller answers again.
 
 If the phone's **when I leave home** automation ever fails to run, the switch stays on and the person reads as home until it is put right. I let the geofence win because a phone with Wi-Fi switched off or a flat battery at home is far more common than a failed automation.
 

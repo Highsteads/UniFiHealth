@@ -50,7 +50,7 @@ Open these by double-clicking the **UniFi Controller** device.
 | **Controller IP / Hostname** | The controller's network address, such as `192.168.1.1`, or its name. Leave it blank if the settings file has it. |
 | **Port** | 443 for a UniFi console such as a Dream Machine or Dream Router, which is how it starts. For the UniFi Network application on a computer, or an older Cloud Key, use the port you reach it on, usually 8443. |
 | **Username** and **Password** | The local account the plugin signs in with. Leave them blank if the settings file has them. |
-| **Verify SSL** | Leave this unticked unless your controller has a proper security certificate. Most home controllers use one they made themselves, and with this ticked the plugin would refuse to connect to it. It is unticked to start with. |
+| **Verify SSL** | Leave this unticked unless your controller has a proper security certificate. Most home controllers use one they made themselves, and with this ticked the plugin would refuse to connect to it. It is unticked to start with. A change takes effect when you click **Save**. |
 | **Save without configuring** | Tick this to save the device before you have the sign-in details. It stays idle until you add them. |
 
 The dialog will not save until it has an address, a username and a password, from these boxes or the settings file, unless **Save without configuring** is ticked.

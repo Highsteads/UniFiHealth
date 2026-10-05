@@ -7,6 +7,12 @@ nav_order: 9
 
 The newest version is at the top.
 
+## 0.9.1 — 5 October 2026
+
+- **A phone that leaves during a controller outage goes away.** While the controller was not answering, during a UniFi Network update for example, a geofence switch turning off made the plugin look again at the controller's last answer. That answer still listed the phone, so the person stayed home, and the plugin also treated the phone as just seen, which held back the real away for the **Presence: away after (minutes)** setting once the controller came back. Now, while the controller is not answering, the geofence switch decides on its own, and the plugin never treats the phone as seen unless the controller has just said so. Without a geofence switch, presence stays as it was until the controller answers.
+- **One trigger that fails no longer stops the others.** If running one trigger went wrong, the rest of the triggers for the same event were skipped, and so was the rest of that check. Each now runs on its own, and a failure puts one warning in the Event Log.
+- **Verify SSL takes effect when you save it.** Before, a change to it waited until the plugin next restarted.
+
 ## 0.9.0 — 5 October 2026
 
 **Set Access Point Transmit Power**, a new action. Choose an access point, a band (2.4, 5 or 6 GHz) and a power: Auto, Low, Medium, High, or Custom with a figure in dBm from 1 to 30.
