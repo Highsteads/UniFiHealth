@@ -4,9 +4,15 @@
 # Description: UniFi Health — WiFi health, client/presence and a config audit
 #              for UniFi controllers (UDM/UDR + legacy). Read-mostly; cmd/devmgr
 #              actions for AP restart / locate.
-# Author:      CliveS & Claude Fable 5.1; Claude Opus 5.5 (0.7.3-0.8.2)
-# Date:        29-09-2026 23:40
-# Version:     0.8.2
+# Author:      CliveS & Claude Fable 5.1; Claude Opus 5.5 (0.7.3-0.9.0)
+# Date:        05-10-2026 11:40
+# Version:     0.9.0
+#
+# v0.9.0 (05-10-2026): SET ACCESS POINT TRANSMIT POWER. A new device action
+#   sets one band's power (Auto, Low, Medium, High or a custom dBm) on one AP,
+#   through upd/device with the whole radio table, and reads it back. A radio
+#   that is switched off is refused, because writing a power mode would switch
+#   it on. The plugin polls straight after so the TX Power state follows.
 #
 # v0.8.2 (29-09-2026): A RADIO SWITCHED OFF IS NOT SHARING A CHANNEL. A disabled
 #   2.4 GHz radio still reports a channel while it scans, so the settings check
@@ -128,7 +134,8 @@ except ImportError:
     log_startup_banner = None
     install_timestamp_filter = None
 
-from unifi_api import UniFiSession, UniFiError
+from unifi_api import (UniFiSession, UniFiError, RADIO_NAMES,  # noqa: E402
+                       TX_POWER_MIN_DBM, TX_POWER_MAX_DBM)
 
 # Credentials: IndigoSecrets.py first, PluginConfig / device fields as fallback.
 _sys.path.insert(0, "/Library/Application Support/Perceptive Automation")
@@ -151,7 +158,7 @@ except ImportError:
 
 from presence_fusion import fused_presence, presence_source
 
-PLUGIN_VERSION = "0.8.2"
+PLUGIN_VERSION = "0.9.0"
 FOLDER_NAME = "UniFi Health"
 
 
@@ -1428,6 +1435,45 @@ class Plugin(indigo.PluginBase):
 
     def action_unlocate_ap(self, action, device):
         self._ap_command(device, "unset-locate")
+
+    def validateActionConfigUi(self, valuesDict, typeId, devId):
+        if typeId == "setApTxPower" and valuesDict.get("powerMode") == "custom":
+            try:
+                dbm = int(str(valuesDict.get("customDbm", "")).strip())
+            except ValueError:
+                dbm = None
+            if dbm is None or not (TX_POWER_MIN_DBM <= dbm <= TX_POWER_MAX_DBM):
+                return (False, valuesDict, {"customDbm":
+                        f"Enter a whole number of dBm from {TX_POWER_MIN_DBM} to {TX_POWER_MAX_DBM}."})
+        return (True, valuesDict)
+
+    def action_set_tx_power(self, action, device):
+        """v0.9.0: set one band's transmit power on this AP, then poll at once."""
+        props = action.props
+        radio = props.get("band", "ng")
+        mode = props.get("powerMode", "auto")
+        power = props.get("customDbm") if mode == "custom" else None
+        band = RADIO_NAMES.get(radio, radio)
+        controller_id = self.ap_devices.get(device.id)
+        cache = self.controllers.get(controller_id)
+        if cache is None:
+            self.logger.error(f"{device.name}: no controller bound, so the {band} power was not changed")
+            return
+        ap_id = (cache.get("devices_by_mac", {}).get(device.address) or {}).get("_id")
+        if not ap_id:
+            self.logger.error(f"{device.name}: the controller has not reported this access point yet, "
+                              f"so the {band} power was not changed")
+            return
+        try:
+            session = self._session_for(indigo.devices[controller_id])
+            ok, msg = session.set_radio_tx_power(ap_id, radio, mode, power)
+        except Exception as err:
+            ok, msg = False, str(err)
+        if ok:
+            self.logger.info(f"{device.name}: {band} transmit power {msg}")
+            self.next_update = 0.0
+        else:
+            self.logger.error(f"{device.name}: {band} transmit power not changed -- {msg}")
 
     def actionControlSensor(self, action, dev):
         # unifiAP + unifiClient are type="sensor"; without this a Send Status Request logs

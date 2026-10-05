@@ -19,6 +19,39 @@
         <CallbackMethod>action_unlocate_ap</CallbackMethod>
     </Action>
 
+    <!-- v0.9.0: transmit power for one band of one AP. Written through
+         upd/device and read back; a radio that is switched off is refused. -->
+    <Action id="setApTxPower" deviceFilter="self.unifiAP" uiPath="DeviceActions">
+        <Name>Set Access Point Transmit Power</Name>
+        <CallbackMethod>action_set_tx_power</CallbackMethod>
+        <ConfigUI>
+            <Field id="band" type="menu" defaultValue="ng">
+                <Label>Band:</Label>
+                <List>
+                    <Option value="ng">2.4 GHz</Option>
+                    <Option value="na">5 GHz</Option>
+                    <Option value="6e">6 GHz</Option>
+                </List>
+            </Field>
+            <Field id="powerMode" type="menu" defaultValue="auto">
+                <Label>Transmit power:</Label>
+                <List>
+                    <Option value="auto">Auto</Option>
+                    <Option value="low">Low</Option>
+                    <Option value="medium">Medium</Option>
+                    <Option value="high">High</Option>
+                    <Option value="custom">Custom (dBm)</Option>
+                </List>
+            </Field>
+            <Field id="customDbm" type="textfield" defaultValue="16" visibleBindingId="powerMode" visibleBindingValue="custom">
+                <Label>Power (dBm):</Label>
+            </Field>
+            <Field id="txPowerNote" type="label" fontSize="small" fontColor="darkgray">
+                <Label>The access point restarts that radio to apply the change, so its devices reconnect within a minute or two. On some models Auto already runs at full power.</Label>
+            </Field>
+        </ConfigUI>
+    </Action>
+
     <Action id="refreshData" uiPath="DeviceActions">
         <Name>Refresh UniFi Data Now</Name>
         <CallbackMethod>action_refresh_now</CallbackMethod>

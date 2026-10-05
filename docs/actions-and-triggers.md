@@ -14,9 +14,10 @@ Add these to an action group, a schedule or a trigger. They are under **Device A
 | **Restart Access Point** | Tells the controller to restart the access point you choose. Devices on it drop off for a minute or two and reconnect. |
 | **Locate Access Point (flash LED)** | Makes the access point's light flash so you can pick it out, which helps when several look the same. |
 | **Stop Locating Access Point** | Stops the flashing. |
+| **Set Access Point Transmit Power** | Sets one band (2.4, 5 or 6 GHz) on the access point you choose to Auto, Low, Medium, High, or Custom with a figure in dBm. The access point restarts that radio, so its devices reconnect within a minute or two. The plugin reads the setting back and says in the Event Log whether the controller kept it. A band you have switched off is left off. |
 | **Refresh UniFi Data Now** | Checks the controller straight away rather than waiting for the next check. |
 
-These three access point actions change something on the controller, so the account the plugin signs in with must be allowed to manage devices. The Event Log says whether each one was sent, and gives the controller's reply if it was turned away.
+These four access point actions change something on the controller, so the account the plugin signs in with must be allowed to manage devices. The Event Log says whether each one was sent, and gives the controller's reply if it was turned away.
 
 **Send Status Request** on an access point or a UniFi WiFi Client also checks the controller straight away.
 
@@ -47,3 +48,9 @@ Every state on the [Your devices](devices.md) page can be used in an Indigo devi
 - the controller's **APs Needing Firmware Update** going above zero
 - an access point's **Uplink Below Capability** becoming true
 - the controller's **WAN/Internet Status** changing from **ok**
+
+## Raising or lowering an access point's power
+
+More power is not always better. On 2.4 GHz, a loud access point makes devices cling to it when a nearer one would serve them better, and it adds to the noise every other access point has to work through. The settings check flags **2.4GHz TX power High** for that reason.
+
+Raise it when a device that cannot move has a weak signal from the nearest access point. Remember that this only makes the access point louder: a small device such as a smart plug still sends back at its own fixed power, so the link the other way does not improve. Check the device's own signal reading afterwards, and put the band back to **Auto** if nothing changed.

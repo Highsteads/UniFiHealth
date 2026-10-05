@@ -5,10 +5,12 @@
 #              UniFiHealth plugin. Handles UniFi OS (UDM/UDR) and legacy
 #              controllers. Read endpoints for health/diagnostics; cmd/devmgr
 #              for AP restart / PoE power-cycle / locate.
-# Author:      CliveS & Claude Opus 4.8; Claude Opus 5.5 (1.2)
-# Date:        27-09-2026
-# Version:     1.2
+# Author:      CliveS & Claude Opus 4.8; Claude Opus 5.5 (1.2-1.3)
+# Date:        05-10-2026
+# Version:     1.3
 #
+# v1.3 (05-10-2026): set_radio_tx_power -- one radio's transmit power, through
+#       upd/device with the whole radio_table, read back after the write.
 # v1.2 (27-09-2026): set_radio_min_rssi no longer refuses 2.4GHz outright --
 #       the plugin decides by Network version before calling it.
 # v1.1: added get_rogue_aps (stat/rogueap, RF-neighbour analysis) and
@@ -24,6 +26,18 @@ import requests
 import urllib3
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+TX_POWER_MODES   = ("auto", "low", "medium", "high", "custom")
+TX_POWER_MIN_DBM = 1
+TX_POWER_MAX_DBM = 30
+RADIO_NAMES      = {"ng": "2.4 GHz", "na": "5 GHz", "6e": "6 GHz"}
+
+
+def describe_tx_power(mode, power=None):
+    """'High', 'Auto', 'custom 12 dBm' -- for log lines, never a raw token."""
+    if mode == "custom":
+        return f"custom {power} dBm"
+    return str(mode or "unknown").capitalize()
 
 
 class UniFiError(Exception):
@@ -359,6 +373,82 @@ class UniFiSession:
                 return False, (f"write not reflected: asked {value}/{enabled}, "
                                f"controller holds {entry.get('min_rssi')}/{entry.get('min_rssi_enabled')}")
         return False, "read-back could not find the radio"
+
+    # ── transmit power (v1.3, 05-10-2026) ──────────────────────────────────
+    #
+    # Network 10 has no rest/device, but PUT upd/device/<_id> with the WHOLE
+    # radio_table stores tx_power_mode (measured 29-09 and 05-10-2026: Dining
+    # Room U7-Pro 2.4 GHz auto -> high, stored, AP re-provisioned in under two
+    # minutes). The table is taken from stat/device, edited in place and sent
+    # back whole, because a list-valued key replaces the stored list.
+
+    def _ap_row(self, device_id, site="default"):
+        for row in self.get_devices(site):
+            if row.get("_id") == device_id:
+                return row
+        return None
+
+    def set_radio_tx_power(self, device_id, radio, mode, power=None,
+                           site="default", dry_run=False):
+        """Set the transmit power of ONE radio on one AP. Returns (ok, message).
+
+        `radio` is "ng" (2.4GHz), "na" (5GHz) or "6e" (6GHz). `mode` is one of
+        TX_POWER_MODES; "custom" needs `power` in dBm. A radio that is switched
+        off is refused: writing a power mode to it would switch it back on.
+        """
+        mode = str(mode or "").strip().lower()
+        if mode not in TX_POWER_MODES:
+            return False, f"power mode {mode!r} is not one of {', '.join(TX_POWER_MODES)}"
+        if mode == "custom":
+            try:
+                power = int(power)
+            except (TypeError, ValueError):
+                return False, f"custom power {power!r} is not a whole number of dBm"
+            if not (TX_POWER_MIN_DBM <= power <= TX_POWER_MAX_DBM):
+                return False, f"custom power {power} dBm is outside {TX_POWER_MIN_DBM}-{TX_POWER_MAX_DBM}"
+
+        row = self._ap_row(device_id, site)
+        if row is None:
+            return False, "access point not found on the controller"
+        table = row.get("radio_table")
+        if not isinstance(table, list) or not table:
+            return False, "access point has no radio table"
+        entry = next((e for e in table if e.get("radio") == radio), None)
+        if entry is None:
+            return False, f"this access point has no {RADIO_NAMES.get(radio, radio)} radio"
+        was = entry.get("tx_power_mode")
+        if was == "disabled":
+            return False, (f"the {RADIO_NAMES.get(radio, radio)} radio is switched off, "
+                           f"and setting its power would switch it on. Nothing was changed.")
+        was_power = entry.get("tx_power")
+        if was == mode and (mode != "custom" or str(was_power) == str(power)):
+            return True, f"already {describe_tx_power(mode, power)}, nothing sent"
+        if dry_run:
+            return True, f"would change {describe_tx_power(was, was_power)} to {describe_tx_power(mode, power)}"
+
+        entry["tx_power_mode"] = mode
+        if mode == "custom":
+            entry["tx_power"] = power
+        if self.session is None:
+            self.login()
+        url = f"{self.base}{self._prefix}/s/{site}/upd/device/{device_id}"
+        try:
+            r = self.session.put(url, json={"radio_table": table}, timeout=self.timeout)
+            if r.status_code == 401:
+                self.login()
+                r = self.session.put(url, json={"radio_table": table}, timeout=self.timeout)
+        except Exception as err:
+            return False, f"PUT connection error: {err}"
+        if r.status_code != 200:
+            return False, f"PUT -> HTTP {r.status_code} {r.text[:120]}"
+
+        # A 200 is not evidence: this route silently drops some fields.
+        check = self._ap_row(device_id, site) or {}
+        got = next((e for e in (check.get("radio_table") or []) if e.get("radio") == radio), {})
+        if got.get("tx_power_mode") != mode or (mode == "custom" and str(got.get("tx_power")) != str(power)):
+            return False, (f"the controller answered OK but holds "
+                           f"{describe_tx_power(got.get('tx_power_mode'), got.get('tx_power'))}")
+        return True, f"changed from {describe_tx_power(was, was_power)} to {describe_tx_power(mode, power)}"
 
     def close(self):
         if self.session:

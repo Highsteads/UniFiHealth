@@ -2,7 +2,7 @@
 
 **See how well your UniFi Wi-Fi is working from Indigo, and which settings are holding it back.**
 
-**Version:** 0.8.2 | **Author:** CliveS & Claude | **Needs:** Indigo 2022.1 or later and a UniFi controller
+**Version:** 0.9.0 | **Author:** CliveS & Claude | **Needs:** Indigo 2022.1 or later and a UniFi controller
 
 **[Read the full guide](https://highsteads.github.io/UniFiHealth/)** — setting up, what everything means, and what to do when something goes wrong.
 
@@ -20,7 +20,7 @@ This plugin lets [Indigo](https://www.indigodomo.com) keep an eye on a UniFi Wi-
 - **Spots slow spots** — an access point whose network cable runs slower than it could, devices on the oldest Wi-Fi standards, firmware updates waiting, and how many of the neighbours' networks share each channel.
 - **Tells you who is home.** A phone you choose has a home or away state, and with Apple Home passing on the phone's location it can say "away" within seconds of leaving.
 - **Sends one Pushover message with the cause** when an access point restarts or the controller shows **Unreachable**, if you use the Pushover plugin.
-- **Restarts an access point, or flashes its light** so you can find it, from an Indigo action.
+- **Restarts an access point, flashes its light** so you can find it, **or sets a band's transmit power**, from an Indigo action.
 
 ## What it works with
 
@@ -43,13 +43,13 @@ The [full guide](https://highsteads.github.io/UniFiHealth/) goes through each st
 
 ## What's new
 
+**v0.9.0** — A new action, **Set Access Point Transmit Power**, sets one band on one access point to Auto, Low, Medium, High or a power you choose in dBm. The plugin checks the controller kept the change, and turns down a band that is switched off rather than switching it back on.
+
 **v0.8.2** — An access point with its 2.4 GHz radio switched off no longer counts towards a shared channel, and the settings check no longer looks at a radio that is off. Before, a switched-off radio could make a channel look shared by one access point too many.
 
 **v0.8.1** — Far fewer "busy" lines in the Event Log. An access point's band is now judged on how busy it has been over the last 15 minutes, not on one reading, and has to calm down to 10 points below your warning level before it can warn again. A busy 2.4 GHz radio jumps up and down from one minute to the next, so the old rule warned hundreds of times a day for the same thing.
 
 **v0.8.0** — The **Config Audit Found an Issue** and **An AP Band Went Over the Utilisation Threshold** triggers now run, once for each new problem. The **Log level** setting now works. A controller that stops answering now shows **Unreachable** after three failed checks, with its trigger and Pushover message. On UniFi Network 10 the settings check no longer reports a minimum signal level you cannot change, and **Apply Minimum RSSI** says plainly that the controller cannot take it.
-
-**v0.7.4** — The access points and the UniFi WiFi Client devices stop filling SQL Logger's history. Uptime, each access point's summary and list of connected devices, and each client's last-seen time changed at most checks and added about 16,000 rows a day. The plugin now tells SQL Logger to skip them. Everything else is kept exactly as before, and existing history is untouched.
 
 Every version is listed in the [version history](https://highsteads.github.io/UniFiHealth/changelog.html).
 

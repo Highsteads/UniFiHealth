@@ -7,6 +7,16 @@ nav_order: 9
 
 The newest version is at the top.
 
+## 0.9.0 — 5 October 2026
+
+**Set Access Point Transmit Power**, a new action. Choose an access point, a band (2.4, 5 or 6 GHz) and a power: Auto, Low, Medium, High, or Custom with a figure in dBm from 1 to 30.
+
+- The plugin changes only that band and leaves the access point's other settings alone.
+- It reads the setting back afterwards and says in the Event Log whether the controller kept it. The controller sometimes accepts a change and quietly ignores it, so the plugin checks.
+- A band you have switched off is left off. Setting its power would switch it back on, so the action says so and changes nothing.
+- The access point restarts that radio to apply the change, so the devices on it reconnect within a minute or two.
+- On some access points Auto already runs at full power. On a U7 Pro, for example, Auto and High both transmit at 16 dBm on 2.4 GHz, so High gains nothing there.
+
 ## 0.8.2 — 29 September 2026
 
 A radio that is switched off no longer counts. An access point keeps reporting a 2.4 GHz channel while its 2.4 GHz radio is off, because it still listens, so the settings check counted it as sharing that channel and could report "shared by 3 APs" when only two were using it. It also checked the switched-off radio's width and power. The check now skips any radio you have turned off.
