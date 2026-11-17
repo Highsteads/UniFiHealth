@@ -135,12 +135,19 @@ class _Reply:
 
 @pytest.mark.parametrize("status,kind", [(401, API.UniFiLoginRefused), (403, API.UniFiLoginRefused),
                                          (429, API.UniFiLoginRefused), (500, API.UniFiError)])
-def test_login_sorts_a_refusal_from_any_other_failure(monkeypatch, status, kind):
+def test_login_sorts_a_refusal_from_any_other_failure(status, kind):
     s = API.UniFiSession("192.0.2.1", "u", "p")
     s.unifi_os = True
     fake = MagicMock()
     fake.post.return_value = _Reply(status)
-    monkeypatch.setattr(API.requests, "Session", lambda: fake)
-    with pytest.raises(API.UniFiError) as err:
-        s.login()
+    # Not monkeypatch: on CI `requests` is a MagicMock, and pytest 9.2's undo
+    # deletes a patched attribute a MagicMock made on demand, so the next
+    # parametrised case finds no `Session` at all.
+    original = API.requests.Session
+    API.requests.Session = lambda: fake
+    try:
+        with pytest.raises(API.UniFiError) as err:
+            s.login()
+    finally:
+        API.requests.Session = original
     assert type(err.value) is kind
