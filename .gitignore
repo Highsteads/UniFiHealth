@@ -8,6 +8,7 @@ __pycache__/
 .DS_Store
 Contents/Packages/
 CLAUDE.md
+AGENTS.md
 *.zip
 
 # Test runner artefacts

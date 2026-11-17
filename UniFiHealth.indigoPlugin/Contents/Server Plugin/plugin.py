@@ -6,7 +6,16 @@
 #              actions for AP restart / locate.
 # Author:      CliveS & Claude Fable 5.1; Claude Opus 5.5 (0.7.3-0.9.1)
 # Date:        05-10-2026 18:10
-# Version:     0.9.1
+# Version:     0.9.2
+#
+# v0.9.2 (17-11-2026): A REFUSED SIGN-IN IS NOT RETRIED EVERY MINUTE. When the
+#   controller refuses the username or password (401 / 403), or locks the
+#   account after too many wrong ones (429), the plugin now waits 5 minutes,
+#   then 10, 20, 40 and at most 60, instead of asking again at every check.
+#   Found live when the router was replaced and its password changed: the
+#   once-a-minute retries kept the controller's lockout alive for two hours.
+#   The controller shows "Sign-in refused", not "Unreachable", and the log says
+#   what to change. A plugin or device restart tries again at once.
 #
 # v0.9.1 (05-10-2026): PRESENCE WHILE THE CONTROLLER IS NOT ANSWERING. The
 #   geofence fast path re-read the cached client list even after a failed
@@ -143,7 +152,7 @@ except ImportError:
     log_startup_banner = None
     install_timestamp_filter = None
 
-from unifi_api import (UniFiSession, UniFiError, RADIO_NAMES,  # noqa: E402
+from unifi_api import (UniFiSession, UniFiError, UniFiLoginRefused, RADIO_NAMES,  # noqa: E402
                        TX_POWER_MIN_DBM, TX_POWER_MAX_DBM)
 
 # Credentials: IndigoSecrets.py first, PluginConfig / device fields as fallback.
@@ -167,7 +176,7 @@ except ImportError:
 
 from presence_fusion import fused_presence, presence_source
 
-PLUGIN_VERSION = "0.9.1"
+PLUGIN_VERSION = "0.9.2"
 FOLDER_NAME = "UniFi Health"
 
 
@@ -200,6 +209,24 @@ def merge_sql_logger_ignore(existing, extra=SQL_LOGGER_CHURN_STATES):
     if not missing:
         return None
     return ", ".join(current + missing)
+
+
+# v0.9.2: how long to leave a controller alone after it refuses the sign-in.
+LOGIN_HOLD_FIRST_SECONDS = 300
+LOGIN_HOLD_MAX_SECONDS   = 3600
+LOGIN_REFUSED_STATUS     = "Sign-in refused"
+
+
+def login_hold_seconds(refusals):
+    """Wait after this many refusals in a row: 5, 10, 20, 40, then 60 minutes."""
+    if refusals < 1:
+        return 0
+    return min(LOGIN_HOLD_FIRST_SECONDS * (2 ** (refusals - 1)), LOGIN_HOLD_MAX_SECONDS)
+
+
+def minutes_text(seconds):
+    minutes = int(round(seconds / 60.0))
+    return "1 minute" if minutes == 1 else f"{minutes} minutes"
 
 
 # v0.8.0: a controller showing Connected is only marked Unreachable once this
@@ -753,15 +780,24 @@ class Plugin(indigo.PluginBase):
         # timeout or refused connection comes from requests itself, and it used
         # to escape to runConcurrentThread's quiet retry: the device kept saying
         # Connected and neither the trigger nor the Pushover ever fired.
+        if self._now() < cache.get("login_hold_until", 0):
+            return                      # sign-in refused: waiting, see _login_refused
         try:
             session = self._session_for(device)
             devices = session.get_devices()
             clients = session.get_clients()
             health = session.get_health()
+        except UniFiLoginRefused as err:
+            self._login_refused(device, cache, err)
+            return
         except Exception as err:
             self._poll_failed(device, cache, err)
             return
         cache["poll_ok"] = True
+        if cache.get("refusals"):
+            self.logger.info(f"{device.name}: the controller accepted the sign-in again")
+        cache["refusals"] = 0
+        cache["login_hold_until"] = 0
         # v0.9.1: the time of this answer. Wi-Fi evidence carries it, so a
         # client row is dated by the poll it came from, never by whoever
         # happens to read it later (the geofence fast path).
@@ -836,6 +872,30 @@ class Plugin(indigo.PluginBase):
 
         if wlan != "ok":
             self._fire_event("wlanDegraded")
+
+    def _login_refused(self, device, cache, err):
+        """The controller said no to the sign-in. Leave it alone for a while:
+        another try a minute later cannot work and feeds the lockout (v0.9.2)."""
+        cache["poll_ok"] = False
+        cache["fails"] = cache.get("fails", 0) + 1
+        if cache.get("session"):
+            cache["session"].close()
+            cache["session"] = None
+        cache["refusals"] = cache.get("refusals", 0) + 1
+        wait = login_hold_seconds(cache["refusals"])
+        cache["login_hold_until"] = self._now() + wait
+        was_connected = (device.states.get("status") == "Connected")
+        self.logger.warning(
+            f"{device.name}: {err}. Check UNIFI_USERNAME and UNIFI_PASSWORD in "
+            f"IndigoSecrets.py (or this device's settings), then restart UniFi Health. "
+            f"Otherwise the next try is in {minutes_text(wait)}.")
+        if device.states.get("status") != LOGIN_REFUSED_STATUS:
+            device.updateStateOnServer("status", LOGIN_REFUSED_STATUS)
+            device.updateStateImageOnServer(indigo.kStateImageSel.SensorTripped)
+            self._fire_event("controllerUnreachable")
+        if was_connected:
+            self._pushover("ctrl:" + str(device.id), "WiFi Health",
+                           "The UniFi controller refused the sign-in. Its password may have changed.")
 
     def _poll_failed(self, device, cache, err):
         """A check of this controller failed. A controller showing Connected

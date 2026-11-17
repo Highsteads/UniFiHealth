@@ -23,10 +23,19 @@ The dialog needs an address, a username and a password, from its own boxes or th
 The plugin cannot sign in to the controller, or the controller has not answered three checks in a row. The Event Log has a warning at each check that says why.
 
 - **"controller unreachable at ..."** — nothing answered at that address and port. Check the address in **Controller IP / Hostname** or the settings file, and check **Port** — 443 for a UniFi console, usually 8443 for the UniFi Network application on a computer or an older Cloud Key.
-- **"login failed"** — the controller turned the username and password away. Check them, and check the account is a local account on the controller, not a Ubiquiti cloud account, and does not use two-step verification.
+- **"login failed"** — the controller answered the sign-in with an error of its own. Try again later, and restart the controller if it goes on.
 - **"no credentials"** — the plugin has no address, username or password to use. Fill them in on the controller device or in the settings file.
 
 If you have just changed `IndigoSecrets.py`, choose **Plugins → UniFi Health → Reload** so the plugin reads it again.
+
+## The controller shows "Sign-in refused"
+
+The controller answered and turned the sign-in away. The Event Log says which of two things happened.
+
+- **"the username or password is wrong"** — check both, on the controller device or in `IndigoSecrets.py`. Check the account is a local account on the controller, not a Ubiquiti cloud account, and does not use two-step verification. A replaced or reset console has a new password.
+- **"refusing sign-ins for now, because of too many wrong ones"** — the console has locked the account for a while. Correct the password if it was wrong, then wait a few minutes.
+
+The plugin waits before each new try: 5 minutes, then 10, 20, 40, and at most 60. Once the username and password are right, choose **Plugins → UniFi Health → Reload** and it tries at once.
 
 ## The log says "no answer from the controller"
 

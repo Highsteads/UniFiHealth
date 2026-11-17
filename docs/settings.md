@@ -18,7 +18,7 @@ Open these with **Plugins → UniFi Health → Configure**. They apply to everyt
 | **Auto-create AP devices** | Ticked, the plugin creates a device for every access point it finds, including a console with its own Wi-Fi such as a Dream Router. It is ticked to start with. |
 | **Auto-remove AP devices** | Ticked, the plugin deletes an access point's device once you remove the access point from UniFi, unless a trigger, schedule, action group or control page still uses it. It is ticked to start with. [How it works](how-it-works.md) explains the safeguards. |
 | **AP offline grace (minutes)** | How long an access point must be away from the controller before its device goes off. It starts at 3, which rides out the restarts of a firmware update. Set it to 0 to mark an access point offline at once. |
-| **Pushover WiFi alerts** | Ticked, the plugin sends a Pushover message when an access point restarts or the controller device becomes **Unreachable**. You need the Pushover plugin installed and turned on. It is unticked to start with. |
+| **Pushover WiFi alerts** | Ticked, the plugin sends a Pushover message when an access point restarts or the controller device becomes **Unreachable** or **Sign-in refused**. You need the Pushover plugin installed and turned on. It is unticked to start with. |
 | **Log level** | How much the plugin writes to the Event Log. **Info**, to start with, shows what changes. **Debug** adds every step, which helps when asking for help. **Warning** and **Error** keep the log to problems only. |
 
 A change takes effect as soon as you click **Save**.

@@ -45,6 +45,31 @@ class UniFiError(Exception):
     pass
 
 
+LOGIN_REFUSED_CODES = (401, 403, 429)
+
+
+class UniFiLoginRefused(UniFiError):
+    """The controller answered the sign-in and said no (v0.9.2).
+
+    401 / 403 mean the username or password is wrong; 429 means the controller
+    is refusing every sign-in for this account after too many wrong ones. Either
+    way, asking again a minute later cannot help and keeps the lockout alive.
+    """
+
+    def __init__(self, status):
+        self.status = int(status)
+        super().__init__(describe_login_refusal(self.status))
+
+
+def describe_login_refusal(status):
+    """Plain words for a refused sign-in, without a full stop."""
+    if int(status) == 429:
+        return ("the controller is refusing sign-ins for now, because of too many "
+                "wrong ones (it answered 429)")
+    return (f"the controller refused the sign-in, so the username or password is "
+            f"wrong (it answered {int(status)})")
+
+
 class UniFiSession:
     """One controller connection: detects the controller type, logs in, holds
     the session cookie + CSRF token, and exposes the read endpoints we need
@@ -104,6 +129,8 @@ class UniFiSession:
             r = self.session.post(self._login_url(), json=body, headers=headers, timeout=self.timeout)
         except Exception as err:
             raise UniFiError(f"login connection error: {err}")
+        if r.status_code in LOGIN_REFUSED_CODES:
+            raise UniFiLoginRefused(r.status_code)
         if r.status_code != 200:
             raise UniFiError(f"login failed: HTTP {r.status_code}")
         csrf = r.headers.get("x-csrf-token") or r.headers.get("X-CSRF-Token")

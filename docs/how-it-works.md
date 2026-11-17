@@ -13,7 +13,7 @@ Every 60 seconds, or whatever you set in **Update frequency**, the plugin asks t
 
 It waits up to eight seconds for each answer.
 
-If the plugin cannot sign in — the controller cannot be found, or it turns the username and password away — the controller device shows **Unreachable** and the Event Log has a warning at each check until it can. Once the plugin is signed in, a check that gets no answer, or too slow an answer, gives one warning in the Event Log and the plugin tries again at the next check. If three checks in a row get no answer, the controller device shows **Unreachable**, just as it does when the plugin cannot sign in. While the controller is not answering, the access point and UniFi WiFi Client devices keep what they last showed, with one exception: a phone with a geofence switch paired follows the switch, as the next section explains. When the controller answers again, the log says how many checks were missed.
+If the controller cannot be found, the controller device shows **Unreachable** and the Event Log has a warning at each check until it can. If the controller turns the username and password away, the device shows **Sign-in refused** and the plugin waits before it asks again: 5 minutes, then 10, 20, 40, and at most 60. A console locks an account after several wrong sign-ins, and asking every minute would keep that lock going. Once the plugin is signed in, a check that gets no answer, or too slow an answer, gives one warning in the Event Log and the plugin tries again at the next check. If three checks in a row get no answer, the controller device shows **Unreachable**, just as it does when the plugin cannot sign in. While the controller is not answering, the access point and UniFi WiFi Client devices keep what they last showed, with one exception: a phone with a geofence switch paired follows the switch, as the next section explains. When the controller answers again, the log says how many checks were missed.
 
 The plugin only reads from the controller, apart from three things you ask for yourself: restarting an access point, flashing its light, and the **Apply Minimum RSSI** menu item.
 
@@ -88,7 +88,7 @@ If the phone's **when I leave home** automation ever fails to run, the switch st
 
 ## Pushover messages
 
-If you tick **Pushover WiFi alerts**, the plugin sends a message through the Pushover plugin when an access point restarts, and when the controller device changes from **Connected** to **Unreachable**. That way you get one message saying what went wrong, rather than a message for every device that dropped off Wi-Fi because of it.
+If you tick **Pushover WiFi alerts**, the plugin sends a message through the Pushover plugin when an access point restarts, and when the controller device changes from **Connected** to **Unreachable** or **Sign-in refused**. That way you get one message saying what went wrong, rather than a message for every device that dropped off Wi-Fi because of it.
 
 The message vibrates rather than playing a sound, and the plugin sends at most one message for the same access point, or for the controller, in any half hour.
 

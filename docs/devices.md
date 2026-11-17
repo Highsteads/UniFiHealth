@@ -17,13 +17,13 @@ The states below are listed by the names Indigo shows when you build a trigger o
 
 ## UniFi Controller
 
-One for your controller. The device list shows **Connected**, or **Unreachable** when the plugin cannot sign in to it, it turns a request away, or it has not answered three checks in a row.
+One for your controller. The device list shows **Connected**, **Sign-in refused** when the controller turns the username and password away, or **Unreachable** when the plugin cannot reach it or it has not answered three checks in a row.
 
 ### The whole network
 
 | Shown as | What it means |
 |---|---|
-| **Controller Status** | **Connected** or **Unreachable**. This is what the device list shows. |
+| **Controller Status** | **Connected**, **Sign-in refused** or **Unreachable**. This is what the device list shows. |
 | **Is UniFi OS** | Ticked for a UniFi console such as a Dream Machine or Dream Router, unticked for the older UniFi Network application. |
 | **Controller Version** | The version of the UniFi software on the controller, read each time the plugin starts. |
 | **WLAN Health** | UniFi's own verdict on your Wi-Fi as a whole — **ok** when all is well. |

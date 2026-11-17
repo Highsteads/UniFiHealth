@@ -7,6 +7,16 @@ nav_order: 9
 
 The newest version is at the top.
 
+## 0.9.2 — 17 November 2026
+
+**A refused sign-in is no longer tried again every minute.**
+
+- If the controller turns the username or password away, the plugin now waits before it asks again: 5 minutes, then 10, 20, 40, and at most 60. Before, it asked at every check, once a minute. A UniFi console locks an account after several wrong sign-ins, and each further try kept that lock going, so even a corrected password was refused until the plugin was stopped. This was found when a router was replaced and its password changed.
+- The controller device shows **Sign-in refused**, where before it showed **Unreachable**. The controller did answer; it said no.
+- The Event Log has one warning for each try, in plain words: whether the password is wrong or the account is locked, what to check, and when the next try is.
+- **The UniFi Controller Became Unreachable** trigger and the Pushover message run once when the sign-in is first refused, not at every check.
+- Restarting the plugin, or the controller device, tries again at once. Do that after you correct the password.
+
 ## 0.9.1 — 5 October 2026
 
 - **A phone that leaves during a controller outage goes away.** While the controller was not answering, during a UniFi Network update for example, a geofence switch turning off made the plugin look again at the controller's last answer. That answer still listed the phone, so the person stayed home, and the plugin also treated the phone as just seen, which held back the real away for the **Presence: away after (minutes)** setting once the controller came back. Now, while the controller is not answering, the geofence switch decides on its own, and the plugin never treats the phone as seen unless the controller has just said so. Without a geofence switch, presence stays as it was until the controller answers.

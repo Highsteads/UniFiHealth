@@ -2,7 +2,7 @@
 
 **See how well your UniFi Wi-Fi is working from Indigo, and which settings are holding it back.**
 
-**Version:** 0.9.1 | **Author:** CliveS & Claude | **Needs:** Indigo 2022.1 or later and a UniFi controller
+**Version:** 0.9.2 | **Author:** CliveS & Claude | **Needs:** Indigo 2022.1 or later and a UniFi controller
 
 **[Read the full guide](https://highsteads.github.io/UniFiHealth/)** — setting up, what everything means, and what to do when something goes wrong.
 
@@ -42,6 +42,8 @@ The UniFi Network controller, on a UniFi console such as a Dream Machine or Drea
 The [full guide](https://highsteads.github.io/UniFiHealth/) goes through each step, explains every setting, and covers what to do if something does not work.
 
 ## What's new
+
+**v0.9.2** — A sign-in the controller refuses is no longer tried again every minute. If the username or password is wrong, or the controller has locked the account after too many wrong tries, the plugin waits 5 minutes, then 10, 20, 40 and at most 60 before asking again, because asking every minute keeps the controller's lockout going. The controller device shows **Sign-in refused**, and the Event Log says what to check.
 
 **v0.9.1** — A phone that leaves home while the controller is not answering, during a UniFi Network update for example, now goes to away. Before, the geofence switch made the plugin look again at the controller's last answer, which still listed the phone, so it stayed home and its away was put back after the controller returned. Also, one trigger that fails no longer stops the others running, and a change to **Verify SSL** takes effect when you save it.
 
