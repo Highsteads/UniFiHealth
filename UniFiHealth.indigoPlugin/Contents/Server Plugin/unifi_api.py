@@ -5,10 +5,13 @@
 #              UniFiHealth plugin. Handles UniFi OS (UDM/UDR) and legacy
 #              controllers. Read endpoints for health/diagnostics; cmd/devmgr
 #              for AP restart / PoE power-cycle / locate.
-# Author:      CliveS & Claude Opus 4.8; Claude Opus 5.5 (1.2-1.3)
-# Date:        05-10-2026
-# Version:     1.3
+# Author:      CliveS & Claude Opus 4.8; Claude Opus 5.5 (1.2-1.4)
+# Date:        19-11-2026
+# Version:     1.4
 #
+# v1.4 (19-11-2026): read_timeout -- a GET waits that long for its answer once
+#       connected (the UDR7 took 26 s over stat/device); connecting, signing in
+#       and writes keep timeout.
 # v1.3 (05-10-2026): set_radio_tx_power -- one radio's transmit power, through
 #       upd/device with the whole radio_table, read back after the write.
 # v1.2 (27-09-2026): set_radio_min_rssi no longer refuses 2.4GHz outright --
@@ -76,13 +79,16 @@ class UniFiSession:
     plus cmd/devmgr commands (restart / power-cycle / locate)."""
 
     def __init__(self, host, username, password, port=443, verify=False,
-                 timeout=8.0, logger=None):
+                 timeout=8.0, logger=None, read_timeout=None):
         self.host     = host
         self.username = username
         self.password = password
         self.port     = int(port) if port else 443
         self.verify   = verify
         self.timeout  = float(timeout)
+        # v1.4: how long a read (GET) waits for the answer once connected.
+        # Connecting, signing in and every write still use timeout.
+        self.read_timeout = float(read_timeout) if read_timeout else self.timeout
         self.logger   = logger
         self.unifi_os = None          # True (UDM/UDR) / False (legacy), set by detect()
         self.session  = None
@@ -139,16 +145,21 @@ class UniFiSession:
         self._log("login OK")
         return True
 
+    def _read_timeouts(self):
+        """(connect, read) for a GET: connecting gives up as before, the answer
+        may take read_timeout (requests takes the pair as two limits)."""
+        return (self.timeout, self.read_timeout)
+
     # ── raw GET (re-login once on 401) ─────────────────────────────────────
     def _get(self, path, site="default"):
         if self.session is None:
             self.login()
         url = self._api(path, site)
-        r = self.session.get(url, timeout=self.timeout)
+        r = self.session.get(url, timeout=self._read_timeouts())
         if r.status_code == 401:
             self._log("session expired (401) — re-login")
             self.login()
-            r = self.session.get(url, timeout=self.timeout)
+            r = self.session.get(url, timeout=self._read_timeouts())
         if r.status_code != 200:
             raise UniFiError(f"GET {path} -> HTTP {r.status_code}")
         return r.json().get("data", [])
@@ -157,7 +168,7 @@ class UniFiSession:
     def get_sites(self):
         if self.session is None:
             self.login()
-        r = self.session.get(f"{self.base}{self._prefix}/self/sites", timeout=self.timeout)
+        r = self.session.get(f"{self.base}{self._prefix}/self/sites", timeout=self._read_timeouts())
         if r.status_code != 200:
             raise UniFiError(f"get_sites -> HTTP {r.status_code}")
         return r.json().get("data", [])
@@ -287,10 +298,10 @@ class UniFiSession:
         if self.session is None:
             self.login()
         url = f"{self.base}{self._prefix}/s/{site}/rest/wlanconf"
-        r = self.session.get(url, timeout=self.timeout)
+        r = self.session.get(url, timeout=self._read_timeouts())
         if r.status_code == 401:
             self.login()
-            r = self.session.get(url, timeout=self.timeout)
+            r = self.session.get(url, timeout=self._read_timeouts())
         if r.status_code != 200:
             raise UniFiError(f"GET rest/wlanconf -> HTTP {r.status_code}")
         return r.json().get("data", [])

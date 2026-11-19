@@ -7,6 +7,15 @@ nav_order: 9
 
 The newest version is at the top.
 
+## 0.9.3 — 19 November 2026
+
+**One slow answer is no longer a warning.**
+
+- A UDR7 sometimes takes far longer than usual to list its devices: 26 seconds and 11 seconds in 150 checks over 75 minutes, about half an hour apart, while every other answer came in under a third of a second. The plugin gave up after 8 seconds, so each of those became a warning in the Event Log that said "Read timed out".
+- The plugin now waits up to 45 seconds for an answer. It still gives up after 8 seconds if it cannot connect at all.
+- A single check that gets no answer is not logged as a warning. The warning comes when a second check in a row fails, and the log says when the controller answers again after that.
+- The controller device still shows **Unreachable** only after three checks in a row get no answer.
+
 ## 0.9.2 — 17 November 2026
 
 **A refused sign-in is no longer tried again every minute.**

@@ -4,9 +4,17 @@
 # Description: UniFi Health — WiFi health, client/presence and a config audit
 #              for UniFi controllers (UDM/UDR + legacy). Read-mostly; cmd/devmgr
 #              actions for AP restart / locate.
-# Author:      CliveS & Claude Fable 5.1; Claude Opus 5.5 (0.7.3-0.9.1)
-# Date:        05-10-2026 18:10
-# Version:     0.9.2
+# Author:      CliveS & Claude Fable 5.1; Claude Opus 5.5 (0.7.3-0.9.3)
+# Date:        19-11-2026 11:20
+# Version:     0.9.3
+#
+# v0.9.3 (19-11-2026): ONE SLOW ANSWER IS NOT A WARNING. Since the router
+#   became a UDR7 it sometimes takes far longer to list its devices: 26.05 s
+#   and 11.49 s in 150 checks over 75 minutes, about half an hour apart, where
+#   the plugin gave up at 8 s and warned "Read timed out" each time. A read now
+#   waits up to CONTROLLER_READ_TIMEOUT (45 s; connecting still gives up at
+#   8 s), one check with no answer is logged at debug only, and the warning
+#   comes when a second check in a row fails. Unreachable still needs three.
 #
 # v0.9.2 (17-11-2026): A REFUSED SIGN-IN IS NOT RETRIED EVERY MINUTE. When the
 #   controller refuses the username or password (401 / 403), or locks the
@@ -176,7 +184,7 @@ except ImportError:
 
 from presence_fusion import fused_presence, presence_source
 
-PLUGIN_VERSION = "0.9.2"
+PLUGIN_VERSION = "0.9.3"
 FOLDER_NAME = "UniFi Health"
 
 
@@ -234,6 +242,12 @@ def minutes_text(seconds):
 # 0.8.0 a signed-in controller that stopped answering never showed Unreachable
 # at all: the error escaped to runConcurrentThread's quiet-retry path.
 CONTROLLER_FAILS_BEFORE_UNREACHABLE = 3
+
+# v0.9.3: how long a read waits for the controller's answer (connecting still
+# gives up after 8 s). The UDR7 answered stat/device in 26.05 s and 11.49 s in
+# 150 checks over 75 minutes on 19-11-2026, about half an hour apart; the other
+# reads stayed under 0.3 s. At 8 s those slow answers were missed checks.
+CONTROLLER_READ_TIMEOUT = 45.0
 
 # v0.8.1: the "band went over the utilisation threshold" warning judges the
 # AVERAGE of the last UTIL_WINDOW_SECONDS, not one reading, and re-arms only once
@@ -766,7 +780,8 @@ class Plugin(indigo.PluginBase):
             host, user, pw, port, verify = self._resolve_creds(device)
             if not host or not user or not pw:
                 raise UniFiError("no credentials — set UNIFI_* in IndigoSecrets.py or the controller device")
-            cache["session"] = UniFiSession(host, user, pw, port=port, verify=verify, logger=self.logger)
+            cache["session"] = UniFiSession(host, user, pw, port=port, verify=verify, logger=self.logger,
+                                           read_timeout=CONTROLLER_READ_TIMEOUT)
             cache["session"].login()
         return cache["session"]
 
@@ -803,7 +818,8 @@ class Plugin(indigo.PluginBase):
         # happens to read it later (the geofence fast path).
         cache["poll_epoch"] = self._now()
         if cache.get("fails"):
-            if device.states.get("status") == "Connected":
+            # v0.9.3: only a miss that was warned about gets its recovery line.
+            if cache["fails"] >= 2 and device.states.get("status") == "Connected":
                 self.logger.info(f"{device.name}: the controller answered again after "
                                  f"{cache['fails']} failed check(s)")
             cache["fails"] = 0
@@ -900,8 +916,9 @@ class Plugin(indigo.PluginBase):
     def _poll_failed(self, device, cache, err):
         """A check of this controller failed. A controller showing Connected
         must fail CONTROLLER_FAILS_BEFORE_UNREACHABLE checks in a row before it
-        is marked Unreachable (one slow answer is not an outage); one already
-        Unreachable, or never connected, stays or goes Unreachable at once."""
+        is marked Unreachable (one slow answer is not an outage), and the first
+        miss is logged at debug only; one already Unreachable, or never
+        connected, stays or goes Unreachable at once."""
         cache["poll_ok"] = False
         cache["fails"] = cache.get("fails", 0) + 1
         if cache.get("session"):
@@ -909,10 +926,13 @@ class Plugin(indigo.PluginBase):
             cache["session"] = None
         was_connected = (device.states.get("status") == "Connected")
         if was_connected and cache["fails"] < CONTROLLER_FAILS_BEFORE_UNREACHABLE:
-            if cache["fails"] == 1:
+            # v0.9.3: one check with no answer says nothing (the UDR7 is slow
+            # about every half hour); the warning comes at the second in a row.
+            if cache["fails"] == 2:
                 self.logger.warning(
-                    f"{device.name}: no answer from the controller ({err}). It will show "
-                    f"Unreachable if {CONTROLLER_FAILS_BEFORE_UNREACHABLE} checks in a row fail.")
+                    f"{device.name}: no answer from the controller twice in a row ({err}). "
+                    f"It will show Unreachable if {CONTROLLER_FAILS_BEFORE_UNREACHABLE} checks "
+                    f"in a row fail.")
             else:
                 self.logger.debug(f"{device.name}: no answer x{cache['fails']}: {err}")
             return

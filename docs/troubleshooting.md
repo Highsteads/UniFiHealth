@@ -39,7 +39,7 @@ The plugin waits before each new try: 5 minutes, then 10, 20, 40, and at most 60
 
 ## The log says "no answer from the controller"
 
-The controller was slow to answer or had gone away for a moment. The plugin tries again at the next check, and the devices keep what they last showed. When it answers again, the log says so and how many checks were missed. If three checks in a row fail, the controller shows **Unreachable** and the section above applies.
+Two checks in a row got no answer within 45 seconds: the controller was slow or had gone away for a moment. One missed check on its own is not logged. The plugin tries again at the next check, and the devices keep what they last showed. When it answers again, the log says so and how many checks were missed. If three checks in a row fail, the controller shows **Unreachable** and the section above applies.
 
 ## No access point devices appear
 

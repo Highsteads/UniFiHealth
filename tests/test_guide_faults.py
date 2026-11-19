@@ -188,7 +188,9 @@ def test_one_blip_then_an_answer_never_shows_unreachable():
     p._poll_controller(dev)
     assert dev.states["status"] == "Connected"
     assert fired(p, "controllerUnreachable") == 0
-    assert any("answered again" in str(c) for c in p.logger.info.call_args_list)
+    # v0.9.3: a single miss is silent, so its recovery is too
+    # (tests/test_slow_answers.py holds the rest of that rule).
+    assert not any("answered again" in str(c) for c in p.logger.info.call_args_list)
 
 
 def test_a_failed_check_leaves_its_clients_and_aps_alone(monkeypatch):
