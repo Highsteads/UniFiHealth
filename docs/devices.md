@@ -42,6 +42,7 @@ One for your controller. The device list shows **Connected**, **Sign-in refused*
 | **Internet Latency (ms)** | How long, in thousandths of a second, it takes to reach the internet and back. |
 | **Internet Drops** | How many times UniFi has counted the internet dropping. |
 | **Speedtest Down (Mbps)** and **Speedtest Up (Mbps)** | The result of the last internet speed test your UniFi gateway ran, in megabits a second. The gateway only runs these if speed tests are turned on in UniFi. |
+| **Speedtest Result** | The gateway's own word for that speed test, from 0.10.0. "Error" means the test failed, and the two speeds above then read 0. It is blank if your controller does not send a word. |
 | **Speedtest Age (hours)** | How long ago that speed test ran. It shows -1 if there has never been one. |
 | **Gateway CPU %** and **Gateway Memory %** | How hard your UniFi gateway, the box that joins your home to the internet, is working. |
 

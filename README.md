@@ -2,7 +2,7 @@
 
 **See how well your UniFi Wi-Fi is working from Indigo, and which settings are holding it back.**
 
-**Version:** 0.9.3 | **Author:** CliveS & Claude | **Needs:** Indigo 2022.1 or later and a UniFi controller
+**Version:** 0.10.0 | **Author:** CliveS & Claude | **Needs:** Indigo 2022.1 or later and a UniFi controller
 
 **[Read the full guide](https://highsteads.github.io/UniFiHealth/)** — setting up, what everything means, and what to do when something goes wrong.
 
@@ -42,6 +42,8 @@ The UniFi Network controller, on a UniFi console such as a Dream Machine or Drea
 The [full guide](https://highsteads.github.io/UniFiHealth/) goes through each step, explains every setting, and covers what to do if something does not work.
 
 ## What's new
+
+**v0.10.0** — The controller device has a new state, **Speedtest Result**, which carries the gateway's own word for its last internet speed test. A test that ends in an error comes back from the gateway as 0 down and 0 up, and until now those two noughts were all the plugin showed, so a failed test looked like a line running at nothing. The Event Log has one warning when a test first fails and one line when a later test works.
 
 **v0.9.3** — One slow answer from the controller no longer puts a warning in the Event Log. A UDR7 sometimes takes 10 to 30 seconds to list its devices, about every half hour, and the plugin used to give up after 8 seconds and warn each time. It now waits up to 45 seconds for an answer, says nothing about a single missed check, and warns only when two checks in a row get no answer. The controller still shows **Unreachable** after three.
 

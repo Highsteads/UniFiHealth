@@ -7,6 +7,16 @@ nav_order: 9
 
 The newest version is at the top.
 
+## 0.10.0 — 26 November 2026
+
+**The speed test's own result is a state.**
+
+- The controller device has a new state, **Speedtest Result**. It holds the gateway's own word for its last internet speed test. It is blank if your controller does not send one.
+- A speed test that ends in an error comes back from the gateway as 0 down and 0 up, with the word "Error" beside them. The plugin used to publish the two noughts and drop the word, so a failed test read as a line running at nothing. Found on a UDR7 whose 6am test had failed.
+- The Event Log has one warning when a test first fails, with the time it ran, and one line when a later test works. Neither is repeated at each check, or when the plugin restarts.
+- **Speedtest Down** and **Speedtest Up** are unchanged: they still read 0 after a failed test. Use **Speedtest Result** in a trigger or on a control page to tell a failed test from a slow line.
+- "Error" is the only word seen so far from a real gateway. Any word with "error" or "fail" in it counts as a failed test.
+
 ## 0.9.3 — 19 November 2026
 
 **One slow answer is no longer a warning.**

@@ -58,6 +58,7 @@
             <State id="internetDrops"><ValueType>Integer</ValueType><TriggerLabel>Internet Drops</TriggerLabel><ControlPageLabel>Internet Drops</ControlPageLabel></State>
             <State id="speedtestDown"><ValueType>Number</ValueType><TriggerLabel>Speedtest Down (Mbps)</TriggerLabel><ControlPageLabel>Speedtest Down (Mbps)</ControlPageLabel></State>
             <State id="speedtestUp"><ValueType>Number</ValueType><TriggerLabel>Speedtest Up (Mbps)</TriggerLabel><ControlPageLabel>Speedtest Up (Mbps)</ControlPageLabel></State>
+            <State id="speedtestStatus"><ValueType>String</ValueType><TriggerLabel>Speedtest Result</TriggerLabel><ControlPageLabel>Speedtest Result</ControlPageLabel></State>
             <State id="speedtestAgeHours"><ValueType>Integer</ValueType><TriggerLabel>Speedtest Age (hours)</TriggerLabel><ControlPageLabel>Speedtest Age (hours)</ControlPageLabel></State>
             <State id="gatewayCpu"><ValueType>Integer</ValueType><TriggerLabel>Gateway CPU %</TriggerLabel><ControlPageLabel>Gateway CPU %</ControlPageLabel></State>
             <State id="gatewayMem"><ValueType>Integer</ValueType><TriggerLabel>Gateway Memory %</TriggerLabel><ControlPageLabel>Gateway Memory %</ControlPageLabel></State>

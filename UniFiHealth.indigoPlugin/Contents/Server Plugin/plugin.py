@@ -4,9 +4,19 @@
 # Description: UniFi Health — WiFi health, client/presence and a config audit
 #              for UniFi controllers (UDM/UDR + legacy). Read-mostly; cmd/devmgr
 #              actions for AP restart / locate.
-# Author:      CliveS & Claude Fable 5.1; Claude Opus 5.5 (0.7.3-0.9.3)
-# Date:        19-11-2026 11:20
-# Version:     0.9.3
+# Author:      CliveS & Claude Fable 5.1; Claude Opus 5.5 (0.7.3-0.9.3); Claude Fable 5.2 (0.10.0)
+# Date:        26-11-2026 14:15
+# Version:     0.10.0
+#
+# v0.10.0 (26-11-2026): THE SPEED TEST'S OWN RESULT IS A STATE. The controller
+#   reports a speed test that ended in an error as 0 down and 0 up, with
+#   speedtest_status "Error" beside them (measured on a UDR7, 26-11-2026: the
+#   only value seen). The plugin published the two noughts and dropped the
+#   word, so a failed test read as a line running at nothing. New controller
+#   state speedtestStatus carries the controller's word, blank when it sends
+#   none, and the Event Log has one warning when a test first fails and one
+#   line when a later test works. Both compare with the state already stored,
+#   so a restart does not repeat them.
 #
 # v0.9.3 (19-11-2026): ONE SLOW ANSWER IS NOT A WARNING. Since the router
 #   became a UDR7 it sometimes takes far longer to list its devices: 26.05 s
@@ -184,7 +194,7 @@ except ImportError:
 
 from presence_fusion import fused_presence, presence_source
 
-PLUGIN_VERSION = "0.9.3"
+PLUGIN_VERSION = "0.10.0"
 FOLDER_NAME = "UniFi Health"
 
 
@@ -371,6 +381,35 @@ def _as_float(value, default):
         return float(value)
     except (ValueError, TypeError):
         return default
+
+
+def speedtest_failed(word):
+    """True when the controller's word for its last speed test says it failed.
+
+    Measured on a UDR7 (26-11-2026, one value seen): "Error", sent with 0 down
+    and 0 up. A blank or missing word is not a failure: an older controller
+    sends none, and the figures are then all there is to go on.
+    """
+    low = str(word or "").strip().lower()
+    return "error" in low or "fail" in low
+
+
+def clock_words(epoch, now=None):
+    """An epoch time the way a person says it: "6:02am today", or
+    "6:02am on 25 November" for another day. Blank when there is no time."""
+    from datetime import datetime
+    try:
+        when = datetime.fromtimestamp(int(epoch))
+    except (ValueError, TypeError, OverflowError, OSError):
+        return ""
+    if int(epoch) <= 0:
+        return ""
+    today = datetime.fromtimestamp(now).date() if now else datetime.now().date()
+    hour = when.hour % 12 or 12
+    clock = f"{hour}:{when.minute:02d}{'am' if when.hour < 12 else 'pm'}"
+    if when.date() == today:
+        return f"{clock} today"
+    return f"{clock} on {when.day} {when.strftime('%B')}"
 
 # UniFi device 'state' codes — 1 = connected/online. Anything else means the AP
 # is adopted but not currently serving Wi-Fi; these are the labels we surface.
@@ -963,6 +1002,31 @@ class Plugin(indigo.PluginBase):
             self.logger.warning(f"{device.name}: could not set the SQL Logger ignore list "
                                 f"({err}); history keeps the churning states")
 
+    def _say_speedtest_change(self, device, word, last_run):
+        """One Event Log line when the speed test's result changes side.
+
+        Compared with the state already on the device, not with memory, so a
+        plugin restart does not say it again. A device made before 0.10.0 has
+        no state yet: that reads as blank, so a test already failing when the
+        plugin is updated is said once.
+        """
+        try:
+            before = str(device.states.get("speedtestStatus", "") or "")
+        except Exception:
+            before = ""
+        was, now_failed = speedtest_failed(before), speedtest_failed(word)
+        if now_failed == was:
+            return
+        when = clock_words(last_run, self._now())
+        ran = f" It ran at {when}." if when else ""
+        if now_failed:
+            self.logger.warning(
+                f"{device.name}: the gateway's last internet speed test failed.{ran} "
+                f"The controller reports \"{word}\" and no speeds, so Speedtest Down and Up "
+                f"read 0 until a test works. Run a speed test in UniFi Network to try again.")
+        else:
+            self.logger.info(f"{device.name}: the gateway's internet speed test is working again.{ran}")
+
     def _update_controller_extras(self, device, cache, health, clients, aps, batch):
         """Populate the richer controller states. Each block is independently
         guarded: one missing subsystem or field must not blank the others."""
@@ -980,6 +1044,12 @@ class Plugin(indigo.PluginBase):
             batch.append({"key": "speedtestUp", "value": round(_as_float(www.get("xput_up"), 0.0), 1)})
             last = _as_int(www.get("speedtest_lastrun"), 0)
             batch.append({"key": "speedtestAgeHours", "value": int((self._now() - last) / 3600) if last else -1})
+            # The controller's own word for that test (0.10.0). A test that
+            # ended in an error comes back as 0 down and 0 up, and without
+            # the word those read as a line running at nothing.
+            word = str(www.get("speedtest_status") or "").strip()
+            batch.append({"key": "speedtestStatus", "value": word})
+            self._say_speedtest_change(device, word, last)
             gw = wan.get("gw_system-stats") or {}
             batch.append({"key": "gatewayCpu", "value": int(round(_as_float(gw.get("cpu"), 0.0)))})
             batch.append({"key": "gatewayMem", "value": int(round(_as_float(gw.get("mem"), 0.0)))})
