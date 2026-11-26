@@ -7,6 +7,15 @@ nav_order: 9
 
 The newest version is at the top.
 
+## 0.10.1 — 26 November 2026
+
+**A failed test on an internet port you do not use is not your line's result.**
+
+- A gateway with two internet ports runs its speed test on both, one after the other, and UniFi reports only the newest test. On a UDR7 with nothing plugged into the second port, the daily 6am run tested the working line first and the empty port about a minute later. From then until the next test the plugin showed a failed test and no speeds, and 0.10.0 put a warning in the Event Log about it, although the line had just measured 822 down.
+- Where the newest test failed, the plugin now reads the gateway's stored tests. If one that measured a speed ran in the ten minutes before the failed test, or after it, the plugin reports that one: its speeds, its age, and **Speedtest Result** "Success".
+- A test that fails with no working test beside it is still reported as failed, with the warning.
+- The gateway is asked for its stored tests once for each failed test, not at every check. A controller that does not keep them (an older or self-hosted one) is reported as before.
+
 ## 0.10.0 — 26 November 2026
 
 **The speed test's own result is a state.**

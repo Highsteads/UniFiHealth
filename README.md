@@ -2,7 +2,7 @@
 
 **See how well your UniFi Wi-Fi is working from Indigo, and which settings are holding it back.**
 
-**Version:** 0.10.0 | **Author:** CliveS & Claude | **Needs:** Indigo 2022.1 or later and a UniFi controller
+**Version:** 0.10.1 | **Author:** CliveS & Claude | **Needs:** Indigo 2022.1 or later and a UniFi controller
 
 **[Read the full guide](https://highsteads.github.io/UniFiHealth/)** — setting up, what everything means, and what to do when something goes wrong.
 
@@ -42,6 +42,8 @@ The UniFi Network controller, on a UniFi console such as a Dream Machine or Drea
 The [full guide](https://highsteads.github.io/UniFiHealth/) goes through each step, explains every setting, and covers what to do if something does not work.
 
 ## What's new
+
+**v0.10.1** — A failed speed test on an internet port you do not use is no longer shown as your line's result. A gateway with two internet ports tests both, one after the other, and UniFi reports only the newest test, so a spare port with no cable made every morning's test read as failed with no speeds. Where the newest test failed, the plugin now looks through the gateway's stored tests and reports the one that measured a speed in the same run. A test that failed on the line you use is still reported as failed.
 
 **v0.10.0** — The controller device has a new state, **Speedtest Result**, which carries the gateway's own word for its last internet speed test. A test that ends in an error comes back from the gateway as 0 down and 0 up, and until now those two noughts were all the plugin showed, so a failed test looked like a line running at nothing. The Event Log has one warning when a test first fails and one line when a later test works.
 

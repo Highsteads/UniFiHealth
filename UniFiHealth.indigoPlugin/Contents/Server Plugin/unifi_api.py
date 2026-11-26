@@ -5,10 +5,12 @@
 #              UniFiHealth plugin. Handles UniFi OS (UDM/UDR) and legacy
 #              controllers. Read endpoints for health/diagnostics; cmd/devmgr
 #              for AP restart / PoE power-cycle / locate.
-# Author:      CliveS & Claude Opus 4.8; Claude Opus 5.5 (1.2-1.4)
-# Date:        19-11-2026
-# Version:     1.4
+# Author:      CliveS & Claude Opus 4.8; Claude Opus 5.5 (1.2-1.4); Claude Fable 5.2 (1.5)
+# Date:        26-11-2026
+# Version:     1.5
 #
+# v1.5 (26-11-2026): get_speedtests -- the gateway's stored speed tests, one
+#   row for each test on each internet port (v2 API, UniFi OS only).
 # v1.4 (19-11-2026): read_timeout -- a GET waits that long for its answer once
 #       connected (the UDR7 took 26 s over stat/device); connecting, signing in
 #       and writes keep timeout.
@@ -185,6 +187,36 @@ class UniFiSession:
         """stat/health — per-subsystem (wlan / wan / www / lan) status, incl.
         the controller's periodic ISP speedtest result and internet latency."""
         return self._get("stat/health", site)
+
+    def get_speedtests(self, site="default"):
+        """The gateway's stored speed tests, oldest first: one row for each
+        test on each internet port.
+
+        Measured on a UDR7 (Network 11.0.104, 26-11-2026): rows of
+        {time (ms), download_mbps, upload_mbps, latency_ms, wan_networkgroup,
+        interface_name}, 24 of them covering eight days. A test on a port with
+        no link is stored as 0, 0 and latency 0. This is the v2 API, which
+        only a UniFi OS console has: a legacy controller, or one without the
+        endpoint, gives an empty list.
+        """
+        if self.session is None:
+            self.login()
+        if not self.unifi_os:
+            return []
+        url = f"{self.base}/proxy/network/v2/api/site/{site}/speedtest"
+        r = self.session.get(url, timeout=self._read_timeouts())
+        if r.status_code == 401:
+            self._log("session expired (401) — re-login")
+            self.login()
+            r = self.session.get(url, timeout=self._read_timeouts())
+        if r.status_code != 200:
+            return []
+        try:
+            body = r.json()
+        except ValueError:
+            return []
+        rows = body.get("data", []) if isinstance(body, dict) else body
+        return rows if isinstance(rows, list) else []
 
     def get_rogue_aps(self, site="default"):
         """stat/rogueap — neighbouring / rogue BSSIDs the APs can hear. Powers

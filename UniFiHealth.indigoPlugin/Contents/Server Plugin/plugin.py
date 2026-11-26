@@ -4,9 +4,20 @@
 # Description: UniFi Health — WiFi health, client/presence and a config audit
 #              for UniFi controllers (UDM/UDR + legacy). Read-mostly; cmd/devmgr
 #              actions for AP restart / locate.
-# Author:      CliveS & Claude Fable 5.1; Claude Opus 5.5 (0.7.3-0.9.3); Claude Fable 5.2 (0.10.0)
-# Date:        26-11-2026 14:15
-# Version:     0.10.0
+# Author:      CliveS & Claude Fable 5.1; Claude Opus 5.5 (0.7.3-0.9.3); Claude Fable 5.2 (0.10.0-0.10.1)
+# Date:        26-11-2026 15:20
+# Version:     0.10.1
+#
+# v0.10.1 (26-11-2026): A FAILED TEST ON AN UNUSED INTERNET PORT IS NOT THE
+#   LINE'S RESULT. A gateway with two internet ports tests both in one run,
+#   and stat/health reports only the newest test. On the UDR7 the 6am run
+#   tests the line in use (822 down at 06:01:26 on 26-11) and then the second
+#   port, which has no cable (0, 0 and "Error" at 06:02:01), so every day from
+#   6:02am the plugin showed a failed test and no speeds, and 0.10.0 warned
+#   about it. Where the newest test failed, the plugin now reads the gateway's
+#   stored tests (unifi_api 1.5 get_speedtests) and, if a test that measured a
+#   speed ran in the ten minutes before the failed one or after it, reports
+#   that test. A failed test with no such neighbour is still reported.
 #
 # v0.10.0 (26-11-2026): THE SPEED TEST'S OWN RESULT IS A STATE. The controller
 #   reports a speed test that ended in an error as 0 down and 0 up, with
@@ -194,7 +205,7 @@ except ImportError:
 
 from presence_fusion import fused_presence, presence_source
 
-PLUGIN_VERSION = "0.10.0"
+PLUGIN_VERSION = "0.10.1"
 FOLDER_NAME = "UniFi Health"
 
 
@@ -392,6 +403,38 @@ def speedtest_failed(word):
     """
     low = str(word or "").strip().lower()
     return "error" in low or "fail" in low
+
+
+# One run tests each internet port in turn. On the UDR7 the two tests were 20 to
+# 74 seconds apart on six mornings (20 to 25-11-2026); ten minutes is well clear
+# of that and well short of the next run, a day later.
+SPEEDTEST_SAME_RUN_SECONDS = 600
+
+
+def working_speedtest(rows, failed_at, window=SPEEDTEST_SAME_RUN_SECONDS):
+    """The newest stored test that measured a speed and belongs with the
+    failed one: it ran in the `window` seconds before it (the same run, on
+    another internet port) or after it. None when there is no such test, and
+    the failure then stands.
+
+    rows are get_speedtests() rows; failed_at is epoch seconds. Returns
+    {"down", "up", "time" (epoch seconds), "port"}.
+    """
+    best = None
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        down = _as_float(row.get("download_mbps"), 0.0)
+        up = _as_float(row.get("upload_mbps"), 0.0)
+        when = _as_float(row.get("time"), 0.0) / 1000.0
+        if (down <= 0 and up <= 0) or when <= 0:
+            continue
+        if when < failed_at - window:
+            continue
+        if best is None or when > best["time"]:
+            best = {"down": down, "up": up, "time": int(when),
+                    "port": str(row.get("wan_networkgroup") or "")}
+    return best
 
 
 def clock_words(epoch, now=None):
@@ -1002,6 +1045,38 @@ class Plugin(indigo.PluginBase):
             self.logger.warning(f"{device.name}: could not set the SQL Logger ignore list "
                                 f"({err}); history keeps the churning states")
 
+    def _working_speedtest(self, device, cache, failed_at):
+        """A test that measured a speed in the same run as the failed one, or
+        after it, from the gateway's stored tests. None when there is none or
+        the gateway cannot be asked.
+
+        The answer is kept for as long as the failed test stays the newest, so
+        the gateway is asked once for each failed test and not at every check.
+        A read that goes wrong is not kept: the next check asks again.
+        """
+        if not isinstance(cache, dict) or not failed_at:
+            return None
+        kept = cache.get("speedtest_lookup")
+        if isinstance(kept, tuple) and kept[0] == failed_at:
+            return kept[1]
+        session = cache.get("session")
+        if session is None or not hasattr(session, "get_speedtests"):
+            return None
+        try:
+            rows = session.get_speedtests()
+        except Exception as err:
+            self.logger.debug(f"{device.name}: stored speed tests not read ({err})")
+            return None
+        found = working_speedtest(rows, failed_at)
+        cache["speedtest_lookup"] = (failed_at, found)
+        if found:
+            port = f" on {found['port']}" if found["port"] else ""
+            self.logger.debug(
+                f"{device.name}: the newest speed test failed, but the test{port} at "
+                f"{clock_words(found['time'], self._now())} measured {found['down']:.0f} down "
+                f"and {found['up']:.0f} up, so that is the one reported")
+        return found
+
     def _say_speedtest_change(self, device, word, last_run):
         """One Event Log line when the speed test's result changes side.
 
@@ -1022,8 +1097,9 @@ class Plugin(indigo.PluginBase):
         if now_failed:
             self.logger.warning(
                 f"{device.name}: the gateway's last internet speed test failed.{ran} "
-                f"The controller reports \"{word}\" and no speeds, so Speedtest Down and Up "
-                f"read 0 until a test works. Run a speed test in UniFi Network to try again.")
+                f"The controller reports \"{word}\" and no speeds, and no other internet port "
+                f"measured a speed in the same run, so Speedtest Down and Up read 0 until a test "
+                f"works. Run a speed test in UniFi Network to try again.")
         else:
             self.logger.info(f"{device.name}: the gateway's internet speed test is working again.{ran}")
 
@@ -1040,14 +1116,23 @@ class Plugin(indigo.PluginBase):
             batch.append({"key": "wanIp", "value": wan.get("wan_ip", "") or ""})
             batch.append({"key": "internetLatencyMs", "value": _as_int(www.get("latency"), 0)})
             batch.append({"key": "internetDrops", "value": _as_int(www.get("drops"), 0)})
-            batch.append({"key": "speedtestDown", "value": round(_as_float(www.get("xput_down"), 0.0), 1)})
-            batch.append({"key": "speedtestUp", "value": round(_as_float(www.get("xput_up"), 0.0), 1)})
+            down = _as_float(www.get("xput_down"), 0.0)
+            up = _as_float(www.get("xput_up"), 0.0)
             last = _as_int(www.get("speedtest_lastrun"), 0)
-            batch.append({"key": "speedtestAgeHours", "value": int((self._now() - last) / 3600) if last else -1})
             # The controller's own word for that test (0.10.0). A test that
             # ended in an error comes back as 0 down and 0 up, and without
             # the word those read as a line running at nothing.
             word = str(www.get("speedtest_status") or "").strip()
+            # stat/health has only the newest test, and a gateway with two
+            # internet ports tests both: a failure on the unused one hid the
+            # working line's result every day (0.10.1).
+            if speedtest_failed(word):
+                better = self._working_speedtest(device, cache, last)
+                if better:
+                    down, up, last, word = better["down"], better["up"], better["time"], "Success"
+            batch.append({"key": "speedtestDown", "value": round(down, 1)})
+            batch.append({"key": "speedtestUp", "value": round(up, 1)})
+            batch.append({"key": "speedtestAgeHours", "value": int((self._now() - last) / 3600) if last else -1})
             batch.append({"key": "speedtestStatus", "value": word})
             self._say_speedtest_change(device, word, last)
             gw = wan.get("gw_system-stats") or {}
